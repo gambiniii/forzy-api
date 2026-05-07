@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+.pytest_cache/
+ml_module/data/raw/*
+ml_module/data/processed/*
+ml_module/models/**/*.pkl
+ml_module/models/**/*.h5
