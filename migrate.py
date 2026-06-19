@@ -2,11 +2,14 @@
 Roda todas as migrations pendentes em ordem.
 Uso: python migrate.py
 """
-from src.db.postgres import SessionLocal
+from src.db.postgres import SessionLocal, engine, Base
 from src.models.atributo import Atributo, ComponenteAtributoValor
+from src.models.anomalia import Anomalia  # noqa — registra no metadata
 from src.models.componente import Componente, EspecificacaoMotor
 from src.models.maquina import Maquina
+from src.models.planta import Planta  # noqa — registra no metadata
 from src.models.enums import StatusEnum
+from sqlalchemy import text
 
 
 def migration_002_motor_weg_w22(db):
@@ -167,7 +170,7 @@ def migration_003_motor_weg_w22_monofasico(db):
             fabricante="WEG",
             ano_instalacao=2024,
             status=StatusEnum.active,
-            localizacao="Setor B",
+            planta_id=1,
         )
         db.add(maquina)
         db.flush()
@@ -252,9 +255,101 @@ def migration_003_motor_weg_w22_monofasico(db):
         _add_valor(db, comp.id, atrib, val_str, val_float, val_int)
 
 
+def migration_004_planta(db):
+    """
+    Cria tabela planta e adiciona planta_id em maquina (FK obrigatória).
+
+    Estratégia para banco com dados existentes:
+      1. Cria tabela planta via DDL (se não existir).
+      2. Adiciona coluna planta_id como nullable em maquina (se não existir).
+      3. Insere a "Planta Principal" e vincula todas as máquinas existentes a ela.
+      4. Torna planta_id NOT NULL.
+      5. Remove coluna localizacao de maquina (se ainda existir).
+    """
+    conn = db.bind.connect()
+    try:
+        # 1. Cria tabela planta (DDL fora do ORM para controle fino)
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS planta (
+                id          SERIAL PRIMARY KEY,
+                nome        VARCHAR(150) NOT NULL,
+                localizacao VARCHAR(200),
+                cidade      VARCHAR(100),
+                estado      VARCHAR(2),
+                ativo       BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        conn.commit()
+
+        # 2. Adiciona planta_id nullable em maquina (ignora se já existir)
+        col_exists = conn.execute(text("""
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'maquina' AND column_name = 'planta_id'
+        """)).fetchone()
+
+        if not col_exists:
+            conn.execute(text(
+                "ALTER TABLE maquina ADD COLUMN planta_id INTEGER REFERENCES planta(id)"
+            ))
+            conn.commit()
+
+        # 3. Vincula máquinas sem planta à planta id=1 (já existente no banco)
+        primeira_planta = db.query(Planta).order_by(Planta.id).first()
+        if primeira_planta:
+            conn.execute(text(
+                "UPDATE maquina SET planta_id = :pid WHERE planta_id IS NULL"
+            ), {"pid": primeira_planta.id})
+        conn.commit()
+
+        # 4. Torna planta_id NOT NULL
+        conn.execute(text(
+            "ALTER TABLE maquina ALTER COLUMN planta_id SET NOT NULL"
+        ))
+        conn.commit()
+
+        # 5. Remove localizacao de maquina se ainda existir
+        loc_exists = conn.execute(text("""
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'maquina' AND column_name = 'localizacao'
+        """)).fetchone()
+
+        if loc_exists:
+            conn.execute(text("ALTER TABLE maquina DROP COLUMN localizacao"))
+            conn.commit()
+
+    finally:
+        conn.close()
+
+
+def migration_005_anomalia(db):
+    """Cria tabela anomalia para registro de predições ML com anomalia detectada."""
+    conn = db.bind.connect()
+    try:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS anomalia (
+                id                      SERIAL PRIMARY KEY,
+                componente_id           INTEGER NOT NULL REFERENCES componente(id),
+                timestamp               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                overall_status          VARCHAR(20) NOT NULL,
+                lstm_severity           VARCHAR(20),
+                risk_level              VARCHAR(20),
+                rul_hours               FLOAT,
+                maintenance_window_days FLOAT,
+                health_score            FLOAT,
+                recommendation          VARCHAR(500)
+            )
+        """))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 MIGRATIONS = [
-    ("002_motor_weg_w22",                 migration_002_motor_weg_w22),
+    ("004_planta",                        migration_004_planta),
     ("003_motor_weg_w22_monofasico",      migration_003_motor_weg_w22_monofasico),
+    ("002_motor_weg_w22",                 migration_002_motor_weg_w22),
+    ("005_anomalia",                      migration_005_anomalia),
 ]
 
 

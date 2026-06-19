@@ -22,6 +22,7 @@ def get_db():
 def create_tables():
     """Cria todas as tabelas ao iniciar a aplicação."""
     from src.models.user import User  # noqa
+    from src.models.planta import Planta  # noqa
     from src.models.maquina import Maquina  # noqa
     from src.models.componente import Componente, EspecificacaoMotor  # noqa
     from src.models.atributo import Atributo, ComponenteAtributoValor  # noqa
@@ -29,4 +30,8 @@ def create_tables():
     from src.models.alert import Alert  # noqa
     from src.models.maintenance import Maintenance  # noqa
 
-    Base.metadata.create_all(bind=engine)
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"[DB] Falha ao conectar no banco: {e}")
+        print("[DB] API subindo sem banco — endpoints que dependem do DB vão retornar erro 503.")

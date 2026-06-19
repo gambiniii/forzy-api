@@ -20,14 +20,14 @@ def get_maquina(db: Session, maquina_id: int) -> Maquina:
 
 def create_maquina(db: Session, nome: str, tipo: Optional[str], fabricante: Optional[str],
                    ano_instalacao: Optional[int], status: StatusEnum,
-                   localizacao: Optional[str]) -> Maquina:
+                   planta_id: int) -> Maquina:
     maquina = Maquina(
         nome=nome,
         tipo=tipo,
         fabricante=fabricante,
         ano_instalacao=ano_instalacao,
         status=status,
-        localizacao=localizacao,
+        planta_id=planta_id,
     )
     db.add(maquina)
     db.commit()

@@ -8,11 +8,11 @@ from src.models.componente import Componente
 from src.models.leitura_sensor import LeituraSensor
 
 
-def ingest_leitura(db: Session, componente_id: int, timestamp: Optional[datetime],
-                   temperatura: Optional[float], umidade: Optional[float],
-                   corrente: Optional[float], voltagem: Optional[float],
-                   rpm: Optional[float], vibracao: Optional[float],
-                   inclinacao: Optional[float]) -> LeituraSensor:
+def ingest_leitura(db: Session, componente_id: int, timestamp: Optional[datetime] = None,
+                   temperatura: Optional[float] = None, umidade: Optional[float] = None,
+                   corrente: Optional[float] = None, voltagem: Optional[float] = None,
+                   rpm: Optional[float] = None, vibracao: Optional[float] = None,
+                   inclinacao: Optional[float] = None) -> LeituraSensor:
     if not db.query(Componente).filter(Componente.id == componente_id).first():
         raise HTTPException(status_code=404, detail="Componente não encontrado")
 

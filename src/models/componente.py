@@ -19,6 +19,7 @@ class Componente(Base):
     especificacao_motor = relationship("EspecificacaoMotor", back_populates="componente", uselist=False)
     atributo_valores    = relationship("ComponenteAtributoValor", back_populates="componente")
     leituras_sensor     = relationship("LeituraSensor", back_populates="componente")
+    anomalias           = relationship("Anomalia", back_populates="componente")
 
 
 class EspecificacaoMotor(Base):

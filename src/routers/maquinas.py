@@ -14,7 +14,7 @@ class MaquinaCreate(BaseModel):
     fabricante: Optional[str] = None
     ano_instalacao: Optional[int] = None
     status: StatusEnum = StatusEnum.active
-    localizacao: Optional[str] = None
+    planta_id: int
 
 
 class MaquinaUpdate(BaseModel):
@@ -23,7 +23,7 @@ class MaquinaUpdate(BaseModel):
     fabricante: Optional[str] = None
     ano_instalacao: Optional[int] = None
     status: Optional[StatusEnum] = None
-    localizacao: Optional[str] = None
+    planta_id: Optional[int] = None
 
 
 def _register(r: APIRouter):

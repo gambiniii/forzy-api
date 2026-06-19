@@ -1,9 +1,19 @@
-from fastapi import FastAPI
+import logging
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.db.postgres import create_tables
 from src.routers import auth, alerts, maintenance, ml, aneel
-from src.routers import maquinas, componentes, atributos, leituras
+from src.routers import maquinas, componentes, atributos, leituras, plantas, anomalias
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s  %(name)s — %(message)s",
+)
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.error").setLevel(logging.CRITICAL)  # suprime tracebacks WS do uvicorn
 
 app = FastAPI(
     title="Forzy Digital Twin API",
@@ -20,19 +30,50 @@ app.add_middleware(
 )
 
 app.include_router(auth.router,         prefix="/auth",        tags=["Auth"])
+app.include_router(plantas.router,      prefix="/plantas",     tags=["Plantas"])
 app.include_router(maquinas.router,     prefix="/maquinas",    tags=["Máquinas"])
 app.include_router(componentes.router,  prefix="/componentes", tags=["Componentes"])
 app.include_router(atributos.router,    prefix="/atributos",   tags=["Atributos EAV"])
 app.include_router(leituras.router,     prefix="/leituras",    tags=["Leituras de Sensor"])
+app.include_router(anomalias.router,    prefix="/anomalias",   tags=["Anomalias"])
 app.include_router(alerts.router,       prefix="/alerts",      tags=["Alertas"])
 app.include_router(maintenance.router,  prefix="/maintenance", tags=["Manutenção"])
 app.include_router(ml.router,           prefix="/ml",          tags=["ML / Predição"])
 app.include_router(aneel.router,        prefix="/aneel",       tags=["ANEEL / Tensão"])
 
 
+@app.exception_handler(SQLAlchemyError)
+async def sqlalchemy_error_handler(request: Request, exc: SQLAlchemyError):
+    cause = str(exc.__cause__ or exc).splitlines()[0]
+    logging.getLogger("app").error("DB error on %s %s — %s", request.method, request.url.path, cause)
+    return JSONResponse(status_code=500, content={"detail": f"Erro de banco de dados: {cause}"})
+
+
+@app.exception_handler(Exception)
+async def generic_error_handler(request: Request, exc: Exception):
+    logging.getLogger("app").error("Unexpected error on %s %s — %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=500, content={"detail": "Erro interno do servidor."})
+
+
 @app.on_event("startup")
 async def startup():
     create_tables()
+    _load_ml_models()
+
+
+def _load_ml_models():
+    import sys
+    from pathlib import Path
+    try:
+        ml_root = Path(__file__).resolve().parent
+        if str(ml_root) not in sys.path:
+            sys.path.insert(0, str(ml_root))
+        from ml_module.inference.predict import load_all_models
+        from src.ws.manager import manager
+        models = load_all_models()
+        manager.set_ml_models(models)
+    except Exception as e:
+        logging.getLogger("app").warning("ML não carregado: %s", e)
 
 
 @app.get("/")
