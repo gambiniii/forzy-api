@@ -58,15 +58,28 @@ async def _run_prediction(componente_id: int) -> dict | None:
         rul = result["rul"]
         lstm = result["lstm"]
 
+        IF = result["isolation_forest"]
         log.info(
-            "componente=%d — ML: status=%s  rul=%.1fh  severity=%s",
+            "componente=%d — ML: status=%s  health=%.3f  rul=%.1fh  risk=%s  "
+            "lstm_err=%.6f  lstm_sev=%s  lstm_anom=%s  if_score=%.6f  if_anom=%s  "
+            "rpm_min=%.2f  rpm_max=%.2f  vib_min=%.4f  vib_max=%.4f",
             componente_id,
             combined["overall_status"],
+            combined["health_score"],
             rul["rul_hours"],
+            rul["risk_level"],
+            lstm["reconstruction_error"],
             lstm["severity"],
+            lstm["is_anomaly"],
+            IF["anomaly_score"],
+            IF["is_anomaly"],
+            raw_df["1.1. Velocidade"].min(),
+            raw_df["1.1. Velocidade"].max(),
+            raw_df["1.2. Aceleração"].min(),
+            raw_df["1.2. Aceleração"].max(),
         )
 
-        is_anomaly = lstm["is_anomaly"] or result["isolation_forest"]["is_anomaly"]
+        is_anomaly = lstm["is_anomaly"] or IF["is_anomaly"]
 
         if is_anomaly:
             from src.db.postgres import SessionLocal

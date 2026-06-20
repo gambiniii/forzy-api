@@ -1,0 +1,37 @@
+Guia de Severidade — Modelos de ML Forzy Digital Twin
+
+ISOLATION FOREST (Detecção de Anomalias Grosseiras)
+Detecta desvios significativos no padrão global dos sensores.
+Score próximo de 0 ou negativo = anomalia.
+Threshold calibrado em 5% de contaminação esperada.
+Quando aciona: variações bruscas de vibração, temperatura ou aceleração
+que fogem completamente do padrão histórico normal.
+
+LSTM AUTOENCODER (Detecção de Padrões Sutis Temporais)
+Analisa janelas de 60 leituras consecutivas (~36 segundos).
+Detecta degradações graduais invisíveis ao Isolation Forest.
+Erro de reconstrução > threshold = anomalia.
+Severidades e ações recomendadas:
+  normal  (erro < 1.5x threshold): operação normal.
+  low     (erro < 2.0x threshold): desvio inicial. Monitorar.
+  medium  (erro < 3.0x threshold): anomalia moderada. Inspecionar em 7 dias.
+  high    (erro < 4.0x threshold): anomalia severa. Intervir em 48 horas.
+  critical (erro >= 4.0x threshold): falha iminente. Parar imediatamente.
+
+XGBOOST RUL (Vida Útil Restante)
+Estima horas restantes de operação segura.
+Treinado no dataset NASA CMAPSS FD001 (100 motores industriais).
+Fine-tuned com dados Forzy via labels híbridos (IF + LSTM + tendência).
+Confiança atual: R² = 0.9994 | MAE = 0.12 horas.
+Níveis de risco:
+  low      (RUL > 5.000h):   manutenção no ciclo normal programado.
+  medium   (RUL > 1.000h):   antecipar próxima revisão preventiva.
+  high     (RUL > 100h):     agendar parada em até 30 dias.
+  critical (RUL <= 100h):    intervenção imediata necessária.
+
+SCORE COMBINADO DE SAÚDE
+health_score = 0.4 * if_score + 0.6 * lstm_score
+  1.0 = motor completamente saudável
+  0.7 a 1.0 = healthy — operação normal
+  0.4 a 0.7 = warning — monitoramento intensificado
+  0.0 a 0.4 = critical — intervenção imediata

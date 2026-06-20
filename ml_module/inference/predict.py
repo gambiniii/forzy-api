@@ -17,6 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from ml_module.features.feature_engineering import build_features, load_raw_csv
+from ml_module.features.feature_selection import anomaly_feature_columns
 from ml_module.models.baseline.isolation_forest import load_model as load_if_model
 from ml_module.models.anomaly.lstm_autoencoder import load_model as load_lstm_model
 from ml_module.models.rul.xgboost_rul import (
@@ -34,7 +35,7 @@ LSTM_CWRU_DIR = PROJECT_ROOT / "ml_module/models/anomaly/saved_cwru"
 HYBRID_RUL_DIR = PROJECT_ROOT / "ml_module/models/rul/saved_hybrid"
 
 WINDOW_SIZE = 60
-FORZY_FEATURE_COUNT = 61
+FORZY_FEATURE_COUNT = 43  # 61 total - 14 temp - 4 cross = 43
 HYBRID_RUL_MIN = 80.0
 HYBRID_RUL_MAX = 160.0
 
@@ -48,7 +49,7 @@ LSTM_SEVERITY_SCORES = {
 
 
 def _feature_columns(features_df: pd.DataFrame) -> list[str]:
-    return [col for col in features_df.columns if col != "timestamp"]
+    return anomaly_feature_columns(features_df)
 
 
 def _lstm_reconstruction_error(model, sequence: np.ndarray) -> float:

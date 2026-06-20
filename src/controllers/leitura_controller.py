@@ -24,7 +24,7 @@ def ctrl_get_leituras(
     componente_id: int,
     inicio: Optional[datetime] = Query(default=None),
     fim: Optional[datetime] = Query(default=None),
-    limit: int = Query(default=100, le=1000),
+    limit: int = Query(default=30, le=200),
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ) -> list[LeituraSensor]:

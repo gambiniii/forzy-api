@@ -1,0 +1,6 @@
+{"timestamp": "2026-06-12T01:37:55.434229Z", "level": "INFO", "logger": "forzy.test", "message": "Iniciando teste de logging"}
+{"timestamp": "2026-06-12T01:38:01.731408Z", "level": "INFO", "logger": "forzy.agent", "message": "Chat iniciado", "session_id": "log_test", "question_preview": "Como está o motor?", "history_turns": 0}
+{"timestamp": "2026-06-12T01:38:09.164054Z", "level": "INFO", "logger": "forzy.agent", "message": "Chat concluído", "session_id": "log_test", "tools_used": ["get_sensor_status"], "response_time_ms": 7432, "tokens_estimated": 120, "fallback_used": false}
+{"timestamp": "2026-06-12T01:38:09.174335Z", "level": "INFO", "logger": "forzy.agent", "message": "Chat iniciado", "session_id": "log_test", "question_preview": "E o RUL?", "history_turns": 1}
+{"timestamp": "2026-06-12T01:38:18.593448Z", "level": "INFO", "logger": "forzy.agent", "message": "Chat concluído", "session_id": "log_test", "tools_used": ["get_ml_analysis"], "response_time_ms": 9419, "tokens_estimated": 415, "fallback_used": false}
+{"timestamp": "2026-06-20T03:48:34.900960Z", "level": "INFO", "logger": "forzy.api", "message": "Request recebido", "session_id": "session_1781926721394", "question_preview": "qq esse motor faz?", "mode": "agent"}

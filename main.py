@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,13 +8,14 @@ from sqlalchemy.exc import SQLAlchemyError
 from src.db.postgres import create_tables
 from src.routers import auth, alerts, maintenance, ml, aneel
 from src.routers import maquinas, componentes, atributos, leituras, plantas, anomalias
+from rag_module.api.router import router as chat_router
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(levelname)s  %(name)s — %(message)s",
 )
 logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
-logging.getLogger("uvicorn.error").setLevel(logging.CRITICAL)  # suprime tracebacks WS do uvicorn
+logging.getLogger("uvicorn.error").setLevel(logging.ERROR)  # mostra erros mas suprime WS disconnect noise
 
 app = FastAPI(
     title="Forzy Digital Twin API",
@@ -40,6 +42,7 @@ app.include_router(alerts.router,       prefix="/alerts",      tags=["Alertas"])
 app.include_router(maintenance.router,  prefix="/maintenance", tags=["Manutenção"])
 app.include_router(ml.router,           prefix="/ml",          tags=["ML / Predição"])
 app.include_router(aneel.router,        prefix="/aneel",       tags=["ANEEL / Tensão"])
+app.include_router(chat_router,                                tags=["Chat / RAG"])
 
 
 @app.exception_handler(SQLAlchemyError)
@@ -59,11 +62,23 @@ async def generic_error_handler(request: Request, exc: Exception):
 async def startup():
     create_tables()
     _load_ml_models()
+    # RAG warmup em background — lazy, não bloqueia startup
+    asyncio.get_event_loop().call_later(5, lambda: asyncio.create_task(_warmup_rag()))
+
+
+async def _warmup_rag():
+    try:
+        from rag_module.api.router import warmup
+        await warmup()
+        logging.getLogger("app").info("RAG agent aquecido")
+    except Exception as e:
+        logging.getLogger("app").warning("RAG warmup falhou: %s", e)
 
 
 def _load_ml_models():
     import sys
     from pathlib import Path
+    log = logging.getLogger("app")
     try:
         ml_root = Path(__file__).resolve().parent
         if str(ml_root) not in sys.path:
@@ -72,8 +87,12 @@ def _load_ml_models():
         from src.ws.manager import manager
         models = load_all_models()
         manager.set_ml_models(models)
+        if_nf   = models["isolation_forest"][1].n_features_in_
+        lstm_nf = models["lstm"][1].n_features_in_
+        lstm_th = models["lstm"][2]
+        log.info("ML carregado — IF features=%d  LSTM features=%d  LSTM threshold=%.6f", if_nf, lstm_nf, lstm_th)
     except Exception as e:
-        logging.getLogger("app").warning("ML não carregado: %s", e)
+        log.warning("ML não carregado: %s", e)
 
 
 @app.get("/")

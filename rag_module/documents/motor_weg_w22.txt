@@ -1,0 +1,22 @@
+Motor WEG W22 3cv — Especificações Técnicas (Forzy Digital Twin)
+Produto: 13887610
+Norma: ABNT NBR 17094
+Potência: 3 cv (2.237 kW)
+Frequência: 60 Hz
+Tensão: 110-127/220-254 V
+Número de polos: 2
+Grau de proteção: IP55
+Rotação síncrona: 3600 rpm
+Fixação: Com pés
+Forma construtiva: B3D
+Refrigeração: IC411 - TFVE
+Limites ISO 10816:
+  Velocidade vibração < 2.8 mm/s = operação boa
+  Velocidade vibração < 4.5 mm/s = operação aceitável
+  Velocidade vibração > 4.5 mm/s = requer atenção imediata
+Temperatura máxima de operação: 80°C
+Vida útil estimada: 20 anos (175.200 horas)
+Sensor de vibração: Pepperl+Fuchs VIM32PL-E1AC8-0RE-IO-1V1401
+  Range vibração: 0-128 mm/s | 0-10g rms
+  Interface: IO-Link 1.1 | Frequência: 10-1000 Hz
+  Temperatura: -40 a 85°C

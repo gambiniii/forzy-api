@@ -1,0 +1,76 @@
+FAQ — Manutenção Preventiva Motor WEG W22 3cv (Forzy Digital Twin)
+
+P: Com que frequência devo fazer manutenção preventiva no motor?
+R: Para o motor WEG W22 3cv em operação contínua, recomenda-se:
+   - Inspeção visual e limpeza: a cada 30 dias
+   - Verificação de vibração e temperatura: a cada 15 dias
+   - Lubrificação dos rolamentos: a cada 2.000 horas de operação
+   - Inspeção elétrica (conexões, isolamento): a cada 6 meses
+   - Revisão geral completa: a cada 8.760 horas (1 ano de operação)
+
+P: O que fazer quando a vibração ultrapassar 2.8 mm/s?
+R: Vibração entre 2.8 e 4.5 mm/s (Zona B ISO 10816):
+   1. Aumentar frequência de monitoramento para diária
+   2. Verificar fixação do motor e elementos de acoplamento
+   3. Inspecionar alinhamento do eixo
+   4. Verificar balanceamento do rotor
+   5. Registrar tendência — se crescente, agendar parada em até 7 dias
+   Vibração acima de 4.5 mm/s: parada imediata para inspeção.
+
+P: O que fazer quando a temperatura ultrapassar 80°C?
+R: Temperatura entre 80°C e 100°C:
+   1. Verificar ventilação — limpar aletas do motor e ventilador
+   2. Reduzir carga se possível
+   3. Verificar tensão de alimentação (variação > 10% causa aquecimento)
+   4. Inspecionar rolamentos — superaquecimento pode indicar falha
+   Temperatura acima de 100°C: desligar imediatamente.
+
+P: O que significa cada nível de severidade do sistema de ML?
+R: O sistema possui 5 níveis de severidade:
+   - normal: motor dentro dos padrões esperados. Sem ação necessária.
+   - low: desvio pequeno detectado pelo LSTM. Monitorar diariamente.
+     Pode indicar início de degradação. Agendar inspeção em 30 dias.
+   - medium: anomalia moderada confirmada por IF e LSTM. 
+     Inspecionar em até 7 dias. Verificar vibração, temperatura e rolamentos.
+   - high: anomalia severa. Intervenção em até 48 horas.
+     Reduzir carga e monitorar continuamente.
+   - critical: falha iminente. Parar o motor imediatamente.
+     Acionar equipe de manutenção de emergência.
+
+P: Como interpretar o RUL (Remaining Useful Life)?
+R: O RUL indica as horas estimadas de vida útil restante do motor:
+   - RUL > 5.000 horas: risco baixo. Manutenção no ciclo normal.
+   - RUL entre 1.000 e 5.000 horas: risco médio. Antecipar próxima revisão.
+   - RUL entre 100 e 1.000 horas: risco alto. Agendar parada em até 30 dias.
+   - RUL < 100 horas: risco crítico. Parada imediata recomendada.
+   O modelo usa dados de vibração, temperatura e aceleração para estimar
+   o RUL com base em padrões de degradação históricos (dataset NASA CMAPSS).
+
+P: Quais são os sinais de falha em rolamentos?
+R: Sinais típicos de falha em rolamentos:
+   - Vibração aumentando progressivamente (especialmente aceleração)
+   - Ruído metálico ou chiado durante operação
+   - Temperatura acima do normal sem causa aparente
+   - Vibração em frequências específicas (BPFO, BPFI, BSF, FTF)
+   O sensor Pepperl+Fuchs VIM32PL detecta estas frequências na faixa
+   de 10 a 1000 Hz com resolução de 0.01 mm/s.
+
+P: O que fazer após receber alerta de anomalia do sistema?
+R: Protocolo de resposta a alertas:
+   1. Verificar dados do sensor em tempo real no dashboard
+   2. Consultar histórico de alertas anteriores
+   3. Verificar se houve mudança recente de carga ou condições
+   4. Se vibração ou temperatura fora do limite: inspeção visual imediata
+   5. Registrar ocorrência no sistema de manutenção
+   6. Acionar técnico especializado se severidade >= medium
+   7. Documentar ação tomada para histórico do equipamento
+
+P: Como o sensor Pepperl+Fuchs VIM32PL mede vibração?
+R: O sensor usa tecnologia MEMS capacitiva e mede:
+   - Velocidade de vibração: 0 a 128 mm/s (rms) — norma ISO 10816
+   - Aceleração: 0 a 10g (rms)
+   - Temperatura: -40 a 85°C
+   - Frequência de amostragem: 8 kHz
+   - Faixa de frequência: 10 a 1000 Hz
+   Comunicação via IO-Link 1.1, ciclo mínimo de 5ms.
+   Grau de proteção IP66/IP67 — adequado para ambientes industriais.

@@ -8,7 +8,8 @@ from fastapi import WebSocket
 log = logging.getLogger("ws.manager")
 
 # Quantas leituras acumular antes de rodar inferência ML
-ML_WINDOW = 30
+# Deve ser >= WINDOW_SIZE do LSTM (60) — padding com zeros causa erro artificial
+ML_WINDOW = 60
 
 
 class ConnectionManager:

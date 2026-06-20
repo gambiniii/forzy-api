@@ -1,0 +1,21 @@
+Norma ISO 10816/20816 — Critérios de Avaliação de Vibração em Motores
+Aplicável ao motor WEG W22 3cv (Classe I — máquinas pequenas)
+
+Faixas de avaliação de velocidade de vibração (mm/s rms):
+  Zona A (novo): 0 a 2.3 mm/s      — operação excelente
+  Zona B (aceitável): 2.3 a 4.5 mm/s — operação satisfatória
+  Zona C (atenção): 4.5 a 7.1 mm/s  — operação tolerável, monitorar
+  Zona D (crítico): > 7.1 mm/s      — risco de dano, parar imediatamente
+
+Causas comuns de vibração elevada:
+  - Desbalanceamento do rotor: vibração na frequência de rotação (60 Hz)
+  - Desalinhamento: vibração em 2x a frequência de rotação
+  - Folga mecânica: vibração em múltiplas harmônicas
+  - Falha em rolamento: vibração em frequências específicas do rolamento
+  - Ressonância estrutural: vibração amplificada em frequências naturais
+
+Temperatura:
+  - Operação normal: até 40°C ambiente + elevação térmica do motor
+  - Classe de isolamento F: suporta até 155°C (enrolamento)
+  - Alerta de temperatura: > 80°C na carcaça
+  - Temperatura crítica: > 100°C na carcaça — parar imediatamente

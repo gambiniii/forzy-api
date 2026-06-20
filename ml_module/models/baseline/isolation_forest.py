@@ -19,6 +19,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from ml_module.features.feature_engineering import build_features, load_raw_csv
+from ml_module.features.feature_selection import anomaly_feature_columns
 
 MODEL_FILENAME = "isolation_forest.joblib"
 SCALER_FILENAME = "isolation_forest_scaler.joblib"
@@ -26,8 +27,8 @@ THRESHOLD_FILENAME = "isolation_forest_threshold.json"
 
 
 def prepare_data(features_df: pd.DataFrame) -> tuple[np.ndarray, StandardScaler]:
-    """Remove timestamp, normaliza com StandardScaler e retorna array + scaler."""
-    feature_cols = [col for col in features_df.columns if col != "timestamp"]
+    """Remove timestamp, cross-features e temperatura; normaliza com StandardScaler."""
+    feature_cols = anomaly_feature_columns(features_df)
     X = features_df[feature_cols].values
 
     scaler = StandardScaler()
