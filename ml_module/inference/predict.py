@@ -17,7 +17,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from ml_module.features.feature_engineering import build_features, load_raw_csv
-from ml_module.features.feature_selection import anomaly_feature_columns
+from ml_module.inference.operational_gate import (
+    gate_velocity_from_sensors,
+    gate_velocity_snapshot,
+    motor_operando,
+)
 from ml_module.models.baseline.isolation_forest import load_model as load_if_model
 from ml_module.models.anomaly.lstm_autoencoder import load_model as load_lstm_model
 from ml_module.models.rul.xgboost_rul import (
@@ -35,7 +39,7 @@ LSTM_CWRU_DIR = PROJECT_ROOT / "ml_module/models/anomaly/saved_cwru"
 HYBRID_RUL_DIR = PROJECT_ROOT / "ml_module/models/rul/saved_hybrid"
 
 WINDOW_SIZE = 60
-FORZY_FEATURE_COUNT = 43  # 61 total - 14 temp - 4 cross = 43
+FORZY_FEATURE_COUNT = 61
 HYBRID_RUL_MIN = 80.0
 HYBRID_RUL_MAX = 160.0
 
@@ -49,7 +53,7 @@ LSTM_SEVERITY_SCORES = {
 
 
 def _feature_columns(features_df: pd.DataFrame) -> list[str]:
-    return anomaly_feature_columns(features_df)
+    return [col for col in features_df.columns if col != "timestamp"]
 
 
 def _lstm_reconstruction_error(model, sequence: np.ndarray) -> float:
@@ -158,14 +162,45 @@ def _hybrid_risk_level(rul_hours: float) -> str:
     return "critical"
 
 
-def predict_single(features_df: pd.DataFrame, models: dict) -> dict:
+def predict_single(
+    features_df: pd.DataFrame, models: dict, raw_df: pd.DataFrame | None = None
+) -> dict:
     """Executa inferência combinada dos 3 modelos no snapshot mais recente."""
+    last_timestamp = features_df["timestamp"].iloc[-1]
+    vel_media = gate_velocity_snapshot(features_df, raw_df)
+
+    if not motor_operando(vel_media):
+        return {
+            "timestamp": last_timestamp,
+            "estado_operacional": "desligado",
+            "isolation_forest": {
+                "is_anomaly": False,
+                "anomaly_score": None,
+                "label": None,
+                "model_version": models.get("if_version", "Forzy"),
+            },
+            "lstm": {
+                "is_anomaly": False,
+                "severity": "n/a",
+                "reconstruction_error": None,
+                "model_version": models.get("lstm_version", "Forzy"),
+            },
+            "rul": {"available": False, "reason": "motor desligado"},
+            "health_index": None,
+            "combined": {
+                "health_score": None,
+                "overall_status": "motor_desligado",
+                "recommendation": (
+                    "Motor fora de operação. Análise de anomalia não aplicável."
+                ),
+            },
+        }
+
     if_model, if_scaler, if_threshold = models["isolation_forest"]
     lstm_model, lstm_scaler, lstm_threshold = models["lstm"]
     rul_model, rul_scaler, rul_metrics = models["rul"]
 
     feature_cols = _feature_columns(features_df)
-    last_timestamp = features_df["timestamp"].iloc[-1]
 
     # --- Isolation Forest ---
     last_if_features = features_df[feature_cols].iloc[-1:].values
@@ -192,36 +227,99 @@ def predict_single(features_df: pd.DataFrame, models: dict) -> dict:
 
     combined_health = 0.4 * if_normalized + 0.6 * lstm_normalized
 
-    # --- XGBoost RUL ---
-    use_hybrid = (HYBRID_RUL_DIR / "hybrid_rul.joblib").exists()
-    if use_hybrid:
-        base_features = features_df[HYBRID_BASE_FEATURES].iloc[-1].to_numpy()
-        rul_trend = combined_health * HYBRID_RUL_MAX
-        rul_trend_rolling = rul_trend
-        hybrid_features = np.concatenate(
-            [base_features, np.array([rul_trend, rul_trend_rolling])]
-        ).reshape(1, -1)
-        hybrid_scaled = rul_scaler.transform(hybrid_features)
-        rul_hours = float(rul_model.predict(hybrid_scaled)[0])
+    # --- XGBoost RUL (resiliente) ---
+    rul_result = None
+    rul_available = True
+    rul_unavailable_reason = None
+
+    try:
+        use_hybrid = (HYBRID_RUL_DIR / "hybrid_rul.joblib").exists()
+        required_rul_features = HYBRID_BASE_FEATURES if use_hybrid else RUL_FEATURE_NAMES
+
+        missing = [f for f in required_rul_features if f not in features_df.columns]
+        if missing:
+            rul_available = False
+            rul_unavailable_reason = (
+                f"Modelo RUL aguarda retreino sem temperatura. "
+                f"{len(missing)} features ausentes (ex: {missing[:3]})."
+            )
+        elif use_hybrid:
+            base_features = features_df[HYBRID_BASE_FEATURES].iloc[-1].to_numpy()
+            rul_trend = combined_health * HYBRID_RUL_MAX
+            rul_trend_rolling = rul_trend
+            hybrid_features = np.concatenate(
+                [base_features, np.array([rul_trend, rul_trend_rolling])]
+            ).reshape(1, -1)
+            hybrid_scaled = rul_scaler.transform(hybrid_features)
+            rul_hours = float(rul_model.predict(hybrid_scaled)[0])
+            rul_result = {
+                "rul_hours": rul_hours,
+                "maintenance_window_days": rul_hours / 24.0,
+                "risk_level": _hybrid_risk_level(rul_hours),
+                "confidence": float(rul_metrics.get("r2", 0.0)),
+                "model_version": "hybrid",
+            }
+        else:
+            last_rul_features = features_df[RUL_FEATURE_NAMES].iloc[-1].to_numpy()
+            rul_result = predict_rul(rul_model, last_rul_features, rul_scaler)
+            rul_result["model_version"] = "forzy_original"
+    except Exception as exc:
+        rul_available = False
+        rul_unavailable_reason = f"Erro ao executar RUL: {exc}"
+
+    if not rul_available:
         rul_result = {
-            "rul_hours": rul_hours,
-            "maintenance_window_days": rul_hours / 24.0,
-            "risk_level": _hybrid_risk_level(rul_hours),
-            "confidence": float(rul_metrics.get("r2", 0.0)),
-            "model_version": "hybrid",
+            "rul_hours": None,
+            "maintenance_window_days": None,
+            "risk_level": "unknown",
+            "confidence": None,
+            "model_version": "unavailable",
+            "available": False,
+            "reason": rul_unavailable_reason,
         }
     else:
-        last_rul_features = features_df[RUL_FEATURE_NAMES].iloc[-1].to_numpy()
-        rul_result = predict_rul(rul_model, last_rul_features, rul_scaler)
-        rul_result["model_version"] = "forzy_original"
+        rul_result["available"] = True
+        rul_result["reason"] = None
 
-    overall_status = _overall_status(combined_health, rul_result["risk_level"])
-    recommendation = _recommendation(
-        overall_status, rul_result["maintenance_window_days"]
-    )
+    if rul_available and rul_result.get("risk_level") not in (None, "unknown"):
+        risk_level = rul_result["risk_level"]
+    else:
+        risk_level = "unknown"
+
+    if risk_level == "unknown":
+        if combined_health >= 0.7:
+            overall_status = "healthy"
+        elif combined_health >= 0.4:
+            overall_status = "warning"
+        else:
+            overall_status = "critical"
+    else:
+        overall_status = _overall_status(combined_health, risk_level)
+
+    if not rul_available:
+        if overall_status == "healthy":
+            recommendation = (
+                "Motor operando normalmente (análise de vibração). "
+                "Estimativa de vida útil temporariamente indisponível."
+            )
+        elif overall_status == "warning":
+            recommendation = (
+                "Padrão de operação irregular detectado na vibração. "
+                "Agendar inspeção. Estimativa de vida útil indisponível."
+            )
+        else:
+            recommendation = (
+                "ALERTA: anomalia crítica de vibração detectada. "
+                "Intervenção imediata recomendada."
+            )
+    else:
+        recommendation = _recommendation(
+            overall_status, rul_result["maintenance_window_days"]
+        )
 
     return {
         "timestamp": last_timestamp,
+        "estado_operacional": "operando",
         "isolation_forest": {
             "anomaly_score": if_score_raw,
             "is_anomaly": if_is_anomaly,
@@ -240,6 +338,7 @@ def predict_single(features_df: pd.DataFrame, models: dict) -> dict:
             "overall_status": overall_status,
             "recommendation": recommendation,
         },
+        "health_index": round(combined_health * 100, 1),
     }
 
 
@@ -254,19 +353,23 @@ def predict_batch(features_df: pd.DataFrame, models: dict) -> pd.DataFrame:
     if_is_anomaly = if_scores <= if_threshold
     if_normalized = np.where(if_is_anomaly, 0.0, 1.0)
 
-    X_rul = features_df[RUL_FEATURE_NAMES].values
-    X_rul_scaled = rul_scaler.transform(X_rul)
-    rul_hours = rul_model.predict(X_rul_scaled)
-
-    risk_levels = pd.Series(rul_hours).apply(
-        lambda h: "low"
-        if h > 5000
-        else "medium"
-        if h > 1000
-        else "high"
-        if h > 100
-        else "critical"
-    )
+    missing_rul = [f for f in RUL_FEATURE_NAMES if f not in features_df.columns]
+    if missing_rul:
+        rul_hours = np.full(len(features_df), np.nan)
+        risk_levels = pd.Series(["unknown"] * len(features_df))
+    else:
+        X_rul = features_df[RUL_FEATURE_NAMES].values
+        X_rul_scaled = rul_scaler.transform(X_rul)
+        rul_hours = rul_model.predict(X_rul_scaled)
+        risk_levels = pd.Series(rul_hours).apply(
+            lambda h: "low"
+            if h > 5000
+            else "medium"
+            if h > 1000
+            else "high"
+            if h > 100
+            else "critical"
+        )
 
     return pd.DataFrame(
         {
@@ -286,7 +389,15 @@ def _print_single_result(result: dict) -> None:
     print("RESULTADO DA INFERÊNCIA (predict_single)")
     print("=" * 60)
     print(f"Timestamp: {result['timestamp']}")
+    print(f"Estado operacional: {result.get('estado_operacional', 'N/A')}")
     print()
+
+    if result.get("estado_operacional") == "desligado":
+        print("Motor desligado — inferência de anomalia não aplicável.")
+        print(f"Recomendação: {result['combined']['recommendation']}")
+        print("=" * 60)
+        return
+
     print("Isolation Forest:")
     print(f"  anomaly_score: {result['isolation_forest']['anomaly_score']:.6f}")
     print(f"  is_anomaly:    {result['isolation_forest']['is_anomaly']}")
@@ -320,7 +431,7 @@ if __name__ == "__main__":
     models = load_all_models()
 
     print("\nExecutando predict_single...")
-    single_result = predict_single(features_df, models)
+    single_result = predict_single(features_df, models, raw_df=raw_df)
     _print_single_result(single_result)
 
     print("\nExecutando predict_batch...")

@@ -92,23 +92,54 @@ def _run_local_ml_analysis(machine_id: str) -> dict:
 
 
 def _format_ml_result(result: dict, machine_id: str) -> str:
+    estado = result.get("estado_operacional", "operando")
+
+    if estado == "desligado":
+        return (
+            f"Análise ML do motor {machine_id}:\n"
+            f"  ESTADO: Motor desligado\n"
+            f"  RECOMENDAÇÃO: {result['combined']['recommendation']}"
+        )
+
     if_result = result["isolation_forest"]
     lstm_result = result["lstm"]
     rul_result = result["rul"]
     combined = result["combined"]
+    health_index = result.get("health_index")
 
     if_label = "anomalia detectada" if if_result["is_anomaly"] else "normal"
     lstm_extra = " (anomalia)" if lstm_result["is_anomaly"] else ""
 
+    if_score = if_result.get("anomaly_score")
+    lstm_error = lstm_result.get("reconstruction_error")
+    if_score_str = f"{if_score:.4f}" if if_score is not None else "n/a"
+    lstm_error_str = f"{lstm_error:.4f}" if lstm_error is not None else "n/a"
+
+    health_str = f"{health_index:.1f}%" if health_index is not None else "n/a"
+
+    rul_available = rul_result.get("available", True)
+    if rul_available and rul_result.get("rul_hours") is not None:
+        rul_hours = rul_result["rul_hours"]
+        maint_days = rul_result["maintenance_window_days"]
+        confidence = rul_result.get("confidence")
+        rul_str = (
+            f"  RUL (Vida Útil Restante): {rul_hours:.1f} horas\n"
+            f"    Janela manutenção: {maint_days:.1f} dias\n"
+            f"    Risco: {rul_result['risk_level']}"
+            + (f" | Confiança: {confidence:.1%}" if confidence is not None else "")
+        )
+    else:
+        reason = rul_result.get("reason", "indisponível")
+        rul_str = f"  RUL (Vida Útil Restante): indisponível ({reason})"
+
     return (
         f"Análise ML do motor {machine_id}:\n"
         f"  ISOLATION FOREST: {if_label}\n"
-        f"    Score: {if_result['anomaly_score']:.4f}\n"
+        f"    Score: {if_score_str}\n"
         f"  LSTM AUTOENCODER: Severidade {lstm_result['severity']}\n"
-        f"    Erro reconstrução: {lstm_result['reconstruction_error']:.4f}{lstm_extra}\n"
-        f"  RUL (Vida Útil Restante): {rul_result['rul_hours']:.1f} horas\n"
-        f"    Janela manutenção: {rul_result['maintenance_window_days']:.1f} dias\n"
-        f"    Risco: {rul_result['risk_level']} | Confiança: {rul_result['confidence']:.1%}\n"
+        f"    Erro reconstrução: {lstm_error_str}{lstm_extra}\n"
+        f"{rul_str}\n"
+        f"  ÍNDICE DE SAÚDE: {health_str}\n"
         f"  STATUS GERAL: {combined['overall_status']}\n"
         f"  RECOMENDAÇÃO: {combined['recommendation']}"
     )

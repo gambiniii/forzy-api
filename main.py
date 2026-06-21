@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,7 +6,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from src.db.postgres import create_tables
 from src.routers import auth, alerts, maintenance, ml, aneel
-from src.routers import maquinas, componentes, atributos, leituras, plantas, anomalias
+from src.routers import maquinas, componentes, atributos, leituras, plantas, diagnosticos
 from rag_module.api.router import router as chat_router
 
 logging.basicConfig(
@@ -37,7 +36,7 @@ app.include_router(maquinas.router,     prefix="/maquinas",    tags=["Máquinas"
 app.include_router(componentes.router,  prefix="/componentes", tags=["Componentes"])
 app.include_router(atributos.router,    prefix="/atributos",   tags=["Atributos EAV"])
 app.include_router(leituras.router,     prefix="/leituras",    tags=["Leituras de Sensor"])
-app.include_router(anomalias.router,    prefix="/anomalias",   tags=["Anomalias"])
+app.include_router(diagnosticos.router, prefix="/diagnosticos", tags=["Diagnósticos ML"])
 app.include_router(alerts.router,       prefix="/alerts",      tags=["Alertas"])
 app.include_router(maintenance.router,  prefix="/maintenance", tags=["Manutenção"])
 app.include_router(ml.router,           prefix="/ml",          tags=["ML / Predição"])
@@ -62,17 +61,6 @@ async def generic_error_handler(request: Request, exc: Exception):
 async def startup():
     create_tables()
     _load_ml_models()
-    # RAG warmup em background — lazy, não bloqueia startup
-    asyncio.get_event_loop().call_later(5, lambda: asyncio.create_task(_warmup_rag()))
-
-
-async def _warmup_rag():
-    try:
-        from rag_module.api.router import warmup
-        await warmup()
-        logging.getLogger("app").info("RAG agent aquecido")
-    except Exception as e:
-        logging.getLogger("app").warning("RAG warmup falhou: %s", e)
 
 
 def _load_ml_models():

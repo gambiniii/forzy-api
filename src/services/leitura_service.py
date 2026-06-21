@@ -8,6 +8,21 @@ from src.models.componente import Componente
 from src.models.leitura_sensor import LeituraSensor
 
 
+def bulk_insert_leituras(db: Session, rows: list[dict]) -> list[LeituraSensor]:
+    leituras = []
+    for r in rows:
+        data = {k: v for k, v in r.items() if k in (
+            "componente_id", "timestamp", "temperatura", "umidade",
+            "corrente", "voltagem", "rpm", "vibracao", "inclinacao",
+        ) and (v is not None or k == "componente_id")}
+        leituras.append(LeituraSensor(**data))
+    db.add_all(leituras)
+    db.commit()
+    for l in leituras:
+        db.refresh(l)
+    return leituras
+
+
 def ingest_leitura(db: Session, componente_id: int, timestamp: Optional[datetime] = None,
                    temperatura: Optional[float] = None, umidade: Optional[float] = None,
                    corrente: Optional[float] = None, voltagem: Optional[float] = None,

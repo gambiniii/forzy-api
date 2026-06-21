@@ -52,66 +52,89 @@ async def _run_prediction(componente_id: int) -> dict | None:
 
         loop = asyncio.get_event_loop()
         features_df = await loop.run_in_executor(None, build_features, raw_df)
-        result = await loop.run_in_executor(None, predict_single, features_df, manager.ml_models)
+        result = await loop.run_in_executor(None, predict_single, features_df, manager.ml_models, raw_df)
 
         combined = result["combined"]
         rul = result["rul"]
         lstm = result["lstm"]
-
         IF = result["isolation_forest"]
+
+        estado = result.get("estado_operacional", "operando")
+
+        if estado == "desligado":
+            log.info("componente=%d — motor DESLIGADO (gate operacional)", componente_id)
+            return {
+                "type": "prediction",
+                "componente_id": componente_id,
+                "estado_operacional": "desligado",
+                "overall_status": "motor_desligado",
+                "health_score": None,
+                "recommendation": combined["recommendation"],
+                "rul_hours": None,
+                "maintenance_window_days": None,
+                "risk_level": "unknown",
+                "lstm_severity": "n/a",
+                "is_anomaly": False,
+            }
+
+        rul_hours = rul.get("rul_hours")
+        maintenance_days = rul.get("maintenance_window_days")
+        risk_level = rul.get("risk_level", "unknown")
+
         log.info(
-            "componente=%d — ML: status=%s  health=%.3f  rul=%.1fh  risk=%s  "
+            "componente=%d — ML: status=%s  health=%.3f  rul=%s  risk=%s  "
             "lstm_err=%.6f  lstm_sev=%s  lstm_anom=%s  if_score=%.6f  if_anom=%s  "
-            "rpm_min=%.2f  rpm_max=%.2f  vib_min=%.4f  vib_max=%.4f",
+            "vib_min=%.4f  vib_max=%.4f",
             componente_id,
             combined["overall_status"],
             combined["health_score"],
-            rul["rul_hours"],
-            rul["risk_level"],
+            f"{rul_hours:.1f}h" if rul_hours is not None else "n/a",
+            risk_level,
             lstm["reconstruction_error"],
             lstm["severity"],
             lstm["is_anomaly"],
             IF["anomaly_score"],
             IF["is_anomaly"],
-            raw_df["1.1. Velocidade"].min(),
-            raw_df["1.1. Velocidade"].max(),
             raw_df["1.2. Aceleração"].min(),
             raw_df["1.2. Aceleração"].max(),
         )
 
         is_anomaly = lstm["is_anomaly"] or IF["is_anomaly"]
 
-        if is_anomaly:
-            from src.db.postgres import SessionLocal
-            from src.services import anomalia_service
-            db = SessionLocal()
-            try:
-                anomalia_service.save_anomalia(
-                    db,
-                    componente_id=componente_id,
-                    overall_status=combined["overall_status"],
-                    lstm_severity=lstm["severity"],
-                    risk_level=rul["risk_level"],
-                    rul_hours=round(rul["rul_hours"], 1),
-                    maintenance_window_days=round(rul["maintenance_window_days"], 1),
-                    health_score=round(combined["health_score"], 4),
-                    recommendation=combined["recommendation"],
-                )
-            except Exception as e:
-                log.error("componente=%d — erro ao salvar anomalia: %s", componente_id, e)
-                db.rollback()
-            finally:
-                db.close()
+        from src.db.postgres import SessionLocal
+        from src.services import diagnostico_service
+        db = SessionLocal()
+        try:
+            diagnostico_service.save_diagnostico(
+                db,
+                componente_id=componente_id,
+                overall_status=combined["overall_status"],
+                is_anomaly=is_anomaly,
+                lstm_severity=lstm["severity"],
+                risk_level=risk_level,
+                rul_hours=round(rul_hours, 1) if rul_hours is not None else None,
+                maintenance_window_days=round(maintenance_days, 1) if maintenance_days is not None else None,
+                health_score=round(combined["health_score"], 4),
+                health_index=result.get("health_index"),
+                recommendation=combined["recommendation"],
+            )
+        except Exception as e:
+            log.error("componente=%d — erro ao salvar diagnostico: %s", componente_id, e)
+            db.rollback()
+        finally:
+            db.close()
 
         return {
             "type": "prediction",
             "componente_id": componente_id,
+            "estado_operacional": "operando",
             "overall_status": combined["overall_status"],
             "health_score": round(combined["health_score"], 4),
+            "health_index": result.get("health_index"),
             "recommendation": combined["recommendation"],
-            "rul_hours": round(rul["rul_hours"], 1),
-            "maintenance_window_days": round(rul["maintenance_window_days"], 1),
-            "risk_level": rul["risk_level"],
+            "rul_hours": round(rul_hours, 1) if rul_hours is not None else None,
+            "maintenance_window_days": round(maintenance_days, 1) if maintenance_days is not None else None,
+            "risk_level": risk_level,
             "lstm_severity": lstm["severity"],
             "is_anomaly": is_anomaly,
         }
@@ -126,11 +149,16 @@ async def ws_leituras(componente_id: int, websocket: WebSocket):
     from src.services import leitura_service
 
     await manager.connect(componente_id, websocket)
-    # Envia o status atual do sensor para o novo cliente imediatamente
-    current_online = manager.sensors.get(componente_id, False)
-    await websocket.send_text(json.dumps({"type": "status", "online": current_online}))
+    try:
+        current_online = manager.sensors.get(componente_id, False)
+        await websocket.send_text(json.dumps({"type": "status", "online": current_online}))
+    except Exception:
+        pass
 
     is_sensor = False
+    pending: list[dict] = []  # buffer de persistência — bulk insert a cada 10
+    BULK_SIZE = 10
+
     try:
         while True:
             raw = await websocket.receive_text()
@@ -141,56 +169,75 @@ async def ws_leituras(componente_id: int, websocket: WebSocket):
                 log.warning("componente=%d — payload inválido (não é JSON)", componente_id)
                 continue
 
-            if data.get("type") == "sensor":
-                if not is_sensor:
-                    is_sensor = True
-                    manager.sensors[componente_id] = True
+            if data.get("type") != "sensor":
+                continue
+
+            if not is_sensor:
+                is_sensor = True
+                manager.sensors[componente_id] = True
+                try:
                     await manager.broadcast(componente_id, {"type": "status", "online": True})
-                    log.info("componente=%d — sensor ONLINE", componente_id)
+                except Exception:
+                    pass
+                log.info("componente=%d — sensor ONLINE", componente_id)
 
-                payload = {k: v for k, v in data.items() if k != "type"}
-                payload["componente_id"] = componente_id
+            payload = {k: v for k, v in data.items() if k != "type"}
+            payload["componente_id"] = componente_id
 
+            # Acumula no buffer ML imediatamente (sem esperar o banco)
+            window_full = manager.push_leitura(componente_id, payload)
+
+            # Broadcast simples para o frontend
+            try:
+                await manager.broadcast(componente_id, {"type": "leitura", **payload})
+            except Exception:
+                pass
+
+            # Acumula para bulk insert
+            pending.append(payload)
+            if len(pending) >= BULK_SIZE:
+                batch = pending[:]
+                pending.clear()
                 db = SessionLocal()
                 try:
-                    leitura = leitura_service.ingest_leitura(db, **payload)
-                    leitura_dict = {
-                        "type": "leitura",
-                        "id": leitura.id,
-                        "componente_id": leitura.componente_id,
-                        "timestamp": leitura.timestamp.isoformat(),
-                        "temperatura": leitura.temperatura,
-                        "umidade": leitura.umidade,
-                        "corrente": leitura.corrente,
-                        "voltagem": leitura.voltagem,
-                        "rpm": leitura.rpm,
-                        "vibracao": leitura.vibracao,
-                        "inclinacao": leitura.inclinacao,
-                    }
+                    leitura_service.bulk_insert_leituras(db, batch)
                 except Exception as e:
-                    log.error("componente=%d — erro ao salvar leitura: %s", componente_id, e)
+                    log.error("componente=%d — erro no bulk insert: %s", componente_id, e)
                     db.rollback()
-                    continue
                 finally:
                     db.close()
 
-                await manager.broadcast(componente_id, leitura_dict)
-
-                # Acumula leitura na janela e roda ML quando cheia
-                window_full = manager.push_leitura(componente_id, leitura_dict)
-                if window_full and manager.ml_ready:
+            # Roda ML quando buffer atingir 500
+            if window_full and manager.ml_ready:
+                log.info("componente=%d — buffer cheio, iniciando ML", componente_id)
+                try:
                     prediction = await _run_prediction(componente_id)
+                    manager.reset_window(componente_id)
                     if prediction:
                         await manager.broadcast(componente_id, prediction)
+                except Exception as e:
+                    log.error("componente=%d — erro no ML (conexão mantida): %s", componente_id, e)
 
     except WebSocketDisconnect:
-        manager.disconnect(componente_id, websocket)
-        if is_sensor:
-            manager.sensors[componente_id] = False
-            await manager.broadcast(componente_id, {"type": "status", "online": False})
-            log.info("componente=%d — sensor OFFLINE", componente_id)
+        pass
     except Exception as e:
         log.error("componente=%d — erro inesperado no WS: %s", componente_id, e)
+    finally:
+        # Persiste o que sobrou no buffer de persistência
+        if pending:
+            db = SessionLocal()
+            try:
+                leitura_service.bulk_insert_leituras(db, pending)
+            except Exception as e:
+                log.error("componente=%d — erro ao persistir leituras pendentes: %s", componente_id, e)
+                db.rollback()
+            finally:
+                db.close()
         manager.disconnect(componente_id, websocket)
         if is_sensor:
             manager.sensors[componente_id] = False
+            try:
+                await manager.broadcast(componente_id, {"type": "status", "online": False})
+            except Exception:
+                pass
+            log.info("componente=%d — sensor OFFLINE", componente_id)

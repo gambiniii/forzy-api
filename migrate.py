@@ -4,7 +4,7 @@ Uso: python migrate.py
 """
 from src.db.postgres import SessionLocal, engine, Base
 from src.models.atributo import Atributo, ComponenteAtributoValor
-from src.models.anomalia import Anomalia  # noqa — registra no metadata
+from src.models.diagnostico import Diagnostico  # noqa — registra no metadata
 from src.models.componente import Componente, EspecificacaoMotor
 from src.models.maquina import Maquina
 from src.models.planta import Planta  # noqa — registra no metadata
@@ -345,11 +345,37 @@ def migration_005_anomalia(db):
         conn.close()
 
 
+def migration_006_diagnostico(db):
+    """Substitui tabela anomalia por diagnostico — armazena todos os resultados ML."""
+    conn = db.bind.connect()
+    try:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS diagnostico (
+                id                      SERIAL PRIMARY KEY,
+                componente_id           INTEGER NOT NULL REFERENCES componente(id),
+                timestamp               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                is_anomaly              BOOLEAN NOT NULL DEFAULT FALSE,
+                overall_status          VARCHAR(20) NOT NULL,
+                lstm_severity           VARCHAR(20),
+                risk_level              VARCHAR(20),
+                rul_hours               FLOAT,
+                maintenance_window_days FLOAT,
+                health_score            FLOAT,
+                health_index            FLOAT,
+                recommendation          VARCHAR(500)
+            )
+        """))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 MIGRATIONS = [
     ("004_planta",                        migration_004_planta),
     ("003_motor_weg_w22_monofasico",      migration_003_motor_weg_w22_monofasico),
     ("002_motor_weg_w22",                 migration_002_motor_weg_w22),
     ("005_anomalia",                      migration_005_anomalia),
+    ("006_diagnostico",                   migration_006_diagnostico),
 ]
 
 

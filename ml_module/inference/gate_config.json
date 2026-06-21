@@ -1,0 +1,13 @@
+{
+  "vibration_floor_mms": 0.3,
+  "velocity_source": "raw_csv_instantaneous",
+  "velocity_columns": [
+    "1.1. Velocidade",
+    "2.1. Velocidade"
+  ],
+  "estados": [
+    "desligado",
+    "operando"
+  ],
+  "regra": "anomalia e indice de saude so calculados quando motor operando"
+}
