@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -30,6 +31,21 @@ from rag_module.chains.rag_chain import ask_with_sources
 from rag_module.chains.vectorstore import CHROMA_PERSIST_DIR, build_vectorstore
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+_PDF_TOKEN = "PDF::"
+
+
+def _extract_report(answer: str) -> tuple[str, str | None]:
+    """Se a resposta contiver um token PDF::<filename>, extrai e limpa."""
+    if _PDF_TOKEN not in answer:
+        return answer, None
+    import re
+    match = re.search(r"PDF::([^\s\"']+\.pdf)", answer)
+    if not match:
+        return answer, None
+    filename = match.group(1)
+    clean = answer.replace(match.group(0), "").strip(" \n.,")
+    return clean, filename
 
 logger = get_logger("forzy.api")
 
@@ -71,6 +87,7 @@ class ChatResponse(BaseModel):
     session_id: Optional[str] = "default"
     fallback_used: bool = False
     response_time_ms: Optional[int] = None
+    report_url: Optional[str] = None
 
 
 class HealthResponse(BaseModel):
@@ -212,8 +229,10 @@ async def send_message(request: ChatRequest):
                     session_id=request.session_id,
                 ),
             )
+            answer, report_filename = _extract_report(result["answer"])
+            report_url = f"/chat/report/{report_filename}" if report_filename else None
             return ChatResponse(
-                answer=result["answer"],
+                answer=answer,
                 tools_used=result.get("tools_used", []),
                 sources=[],
                 mode="agent",
@@ -221,6 +240,7 @@ async def send_message(request: ChatRequest):
                 session_id=result.get("session_id", request.session_id),
                 fallback_used=result.get("fallback_used", False),
                 response_time_ms=result.get("response_time_ms"),
+                report_url=report_url,
             )
 
         vs = get_vectorstore()
@@ -240,6 +260,20 @@ async def send_message(request: ChatRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/report/{filename}")
+async def download_report(filename: str):
+    """Faz download de um relatório PDF gerado pelo agente."""
+    from rag_module.tools.report_tool import REPORTS_DIR
+    filepath = REPORTS_DIR / filename
+    if not filepath.exists() or not filename.endswith(".pdf"):
+        raise HTTPException(status_code=404, detail="Relatório não encontrado.")
+    return FileResponse(
+        path=str(filepath),
+        media_type="application/pdf",
+        filename=filename,
+    )
 
 
 @router.post("/warmup")

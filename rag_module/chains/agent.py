@@ -30,6 +30,8 @@ from rag_module.tools.sensor_tool import (
     get_ml_analysis,
     get_sensor_status,
 )
+from rag_module.tools.db_tool import get_db_leituras, get_db_diagnosticos
+from rag_module.tools.report_tool import generate_motor_report
 
 logger = get_logger("forzy.agent")
 
@@ -66,6 +68,9 @@ def build_agent(vectorstore=None):
         get_ml_analysis,
         get_maintenance_history,
         get_active_alerts,
+        get_db_leituras,
+        get_db_diagnosticos,
+        generate_motor_report,
         create_rag_tool(vectorstore),
     ]
 

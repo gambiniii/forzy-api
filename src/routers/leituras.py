@@ -189,7 +189,11 @@ async def ws_leituras(componente_id: int, websocket: WebSocket):
 
             # Broadcast simples para o frontend
             try:
-                await manager.broadcast(componente_id, {"type": "leitura", **payload})
+                from datetime import timezone
+                broadcast_payload = {**payload}
+                if "timestamp" not in broadcast_payload or not broadcast_payload["timestamp"]:
+                    broadcast_payload["timestamp"] = datetime.now(timezone.utc).isoformat()
+                await manager.broadcast(componente_id, {"type": "leitura", **broadcast_payload})
             except Exception:
                 pass
 

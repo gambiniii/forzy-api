@@ -1,0 +1,35 @@
+{
+  "session_id": "session_1782180191758",
+  "updated_at": "2026-06-22T23:20:24.915055",
+  "turn_count": 3,
+  "messages": [
+    {
+      "role": "user",
+      "content": "me de um resumo das analises do motor salvas no banco"
+    },
+    {
+      "role": "assistant",
+      "content": "Foi encontrada 1 análise de diagnóstico no banco de dados para o componente 1:\n\n*   **Data:** 23 de junho de 2026, 02:00:51 UTC\n*   **Status:** Crítico\n*   **Severidade LSTM:** Crítica\n*   **Risco:** Desconhecido\n*   **Saúde:** 0.0%\n*   **RUL (Vida Útil Restante):** Não disponível\n*   **Janela de Manutenção:** Não disponível\n*   **Recomendação:** ALERTA: anomalia crítica de vibração detectada. Intervenção imediata recomendada.\n\nEste diagnóstico indica uma anomalia crítica de vibração, sugerindo a necessidade de uma intervenção imediata."
+    },
+    {
+      "role": "user",
+      "content": "gera um documento pra mim"
+    },
+    {
+      "role": "assistant",
+      "content": "Para gerar um documento, preciso de mais informações. Qual tipo de documento você gostaria? Um relatório completo de análise do motor, um laudo técnico, ou outro formato?"
+    },
+    {
+      "role": "user",
+      "content": "faz um de cada"
+    },
+    {
+      "role": "assistant",
+      "content": "PDF::relatorio_motor_1_12689d38.pdf"
+    },
+    {
+      "role": "assistant",
+      "content": "Um relatório PDF completo de análise do motor foi gerado. Você pode acessá-lo através do link: `PDF::relatorio_motor_1_12689d38.pdf`\n\nNo momento, a ferramenta disponível gera apenas um tipo de relatório. Se precisar de um laudo técnico com informações específicas, por favor, me diga quais dados você gostaria que fossem incluídos."
+    }
+  ]
+}
