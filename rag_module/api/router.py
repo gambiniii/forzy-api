@@ -32,20 +32,16 @@ from rag_module.chains.vectorstore import CHROMA_PERSIST_DIR, build_vectorstore
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
-_PDF_TOKEN = "PDF::"
-
-
 def _extract_report(answer: str) -> tuple[str, str | None]:
-    """Se a resposta contiver um token PDF::<filename>, extrai e limpa."""
-    if _PDF_TOKEN not in answer:
-        return answer, None
+    """Extrai token REPORT:: ou PDF:: da resposta do agente."""
     import re
-    match = re.search(r"PDF::([^\s\"']+\.pdf)", answer)
-    if not match:
-        return answer, None
-    filename = match.group(1)
-    clean = answer.replace(match.group(0), "").strip(" \n.,")
-    return clean, filename
+    for pattern in (r"REPORT::([^\s\"']+)", r"PDF::([^\s\"']+\.pdf)"):
+        m = re.search(pattern, answer)
+        if m:
+            filename = m.group(1)
+            clean = answer.replace(m.group(0), "").strip(" \n.,")
+            return clean, filename
+    return answer, None
 
 logger = get_logger("forzy.api")
 
@@ -264,14 +260,26 @@ async def send_message(request: ChatRequest):
 
 @router.get("/report/{filename}")
 async def download_report(filename: str):
-    """Faz download de um relatório PDF gerado pelo agente."""
+    """Faz download de relatório gerado pelo agente (PDF, Excel ou Word)."""
     from rag_module.tools.report_tool import REPORTS_DIR
+
+    ALLOWED_EXT = {".pdf", ".xlsx", ".docx"}
+    MEDIA_TYPES = {
+        ".pdf":  "application/pdf",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }
+
+    from pathlib import Path as _P
+    ext = _P(filename).suffix.lower()
     filepath = REPORTS_DIR / filename
-    if not filepath.exists() or not filename.endswith(".pdf"):
+
+    if ext not in ALLOWED_EXT or not filepath.exists():
         raise HTTPException(status_code=404, detail="Relatório não encontrado.")
+
     return FileResponse(
         path=str(filepath),
-        media_type="application/pdf",
+        media_type=MEDIA_TYPES[ext],
         filename=filename,
     )
 

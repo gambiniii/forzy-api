@@ -1,7 +1,6 @@
 """
-Tool LangChain — consulta direta ao banco de dados Forzy (PostgreSQL).
-Busca leituras recentes e diagnósticos ML persistidos, fornecendo contexto
-factual e atualizado ao agente RAG.
+Tools LangChain — acesso completo ao banco PostgreSQL da Forzy.
+Fornece leituras, diagnósticos, motores, plantas, alertas e manutenções.
 """
 
 from __future__ import annotations
@@ -16,123 +15,285 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
-def _get_session():
-    # Importar todos os modelos antes de usar a sessão para garantir que o
-    # mapper do SQLAlchemy resolva todos os relacionamentos (Planta, Maquina etc.)
-    import src.models.user         # noqa: F401
-    import src.models.planta       # noqa: F401
-    import src.models.maquina      # noqa: F401
-    import src.models.componente   # noqa: F401
-    import src.models.atributo     # noqa: F401
-    import src.models.leitura_sensor  # noqa: F401
-    import src.models.alert        # noqa: F401
-    import src.models.maintenance  # noqa: F401
-    import src.models.diagnostico  # noqa: F401
-
+def _db():
     from src.db.postgres import SessionLocal
     return SessionLocal()
 
 
-def _iso_vibracao(v: float | None) -> str:
-    if v is None:
-        return "n/d"
-    if v < 2.8:
-        return "normal"
-    if v < 4.5:
-        return "atenção"
-    return "CRÍTICA"
+def _exec(sql: str, params: dict | None = None):
+    from sqlalchemy import text
+    from src.db.postgres import SessionLocal
+    db = SessionLocal()
+    try:
+        result = db.execute(text(sql), params or {})
+        return result.fetchall()
+    finally:
+        db.close()
 
 
-def _temp_label(v: float | None) -> str:
-    if v is None:
-        return "n/d"
-    return "normal" if v < 80 else "ALERTA"
-
+# ── Sensores ──────────────────────────────────────────────────────────────────
 
 @tool
-def get_db_leituras(componente_id: int = 1, limit: int = 5) -> str:
+def get_db_leituras(componente_id: int = 1, limit: int = 10) -> str:
     """Busca as últimas leituras de sensor (vibração, temperatura, RPM, corrente, voltagem)
-    diretamente do banco de dados PostgreSQL. Use quando precisar de dados históricos
-    recentes do componente/motor para embasar um diagnóstico ou tendência."""
+    do banco PostgreSQL. Use para dados históricos recentes, tendências ou embasar diagnóstico."""
     try:
-        from src.models.leitura_sensor import LeituraSensor
-
-        db = _get_session()
-        try:
-            rows = (
-                db.query(LeituraSensor)
-                .filter(LeituraSensor.componente_id == componente_id)
-                .order_by(LeituraSensor.timestamp.desc())
-                .limit(limit)
-                .all()
-            )
-        finally:
-            db.close()
+        rows = _exec("""
+            SELECT timestamp, temperatura, umidade, corrente, voltagem, rpm, vibracao, inclinacao
+            FROM leitura_sensor
+            WHERE componente_id = :cid
+            ORDER BY timestamp DESC LIMIT :lim
+        """, {"cid": componente_id, "lim": limit})
 
         if not rows:
-            return f"Nenhuma leitura encontrada no banco para o componente {componente_id}."
+            return f"Nenhuma leitura encontrada para componente {componente_id}."
 
-        lines = [f"Historico de leituras — componente {componente_id} (ultimas {len(rows)}):"]
+        lines = [f"Últimas {len(rows)} leituras — componente {componente_id}:"]
         for r in rows:
-            ts = r.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC") if r.timestamp else "n/d"
-            vib  = r.vibracao
-            temp = r.temperatura
-            lines.append(f"  [{ts}]")
-            lines.append(f"  - Vibracao: {vib if vib is not None else 'n/d'} g ({_iso_vibracao(vib)})")
-            lines.append(f"  - Temperatura: {temp if temp is not None else 'n/d'} C ({_temp_label(temp)})")
-            lines.append(f"  - RPM: {r.rpm if r.rpm is not None else 'n/d'}")
-            lines.append(f"  - Corrente: {r.corrente if r.corrente is not None else 'n/d'} A")
-            lines.append(f"  - Voltagem: {r.voltagem if r.voltagem is not None else 'n/d'} V")
+            ts = r[0].strftime("%d/%m/%Y %H:%M UTC") if r[0] else "n/d"
+            vib = r[6]
+            temp = r[1]
+            vib_label = ("normal" if vib is None or vib < 2.8 else "atenção" if vib < 4.5 else "CRÍTICA")
+            temp_label = "normal" if temp is None or temp < 80 else "ALERTA"
+            lines.append(
+                f"  [{ts}] Temp: {temp or 'n/d'}°C ({temp_label}) | "
+                f"Vibr: {vib or 'n/d'} mm/s ({vib_label}) | "
+                f"RPM: {r[5] or 'n/d'} | Corrente: {r[3] or 'n/d'}A | Voltagem: {r[4] or 'n/d'}V"
+            )
         return "\n".join(lines)
-
     except Exception as exc:
-        return f"Erro ao consultar leituras no banco: {exc}"
+        return f"Erro ao consultar leituras: {exc}"
 
 
 @tool
-def get_db_diagnosticos(componente_id: int = 1, limit: int = 3) -> str:
-    """Busca os diagnosticos ML mais recentes persistidos no banco de dados PostgreSQL.
-    Cada diagnostico contem: status geral, severidade LSTM, nivel de risco, RUL (vida util
-    restante em horas), indice de saude e recomendacao gerada pelo modelo. Use quando
-    precisar de analise historica de saude do motor ou tendencia de degradacao."""
+def get_sensor_trends(componente_id: int = 1, hours: int = 24) -> str:
+    """Analisa tendências dos sensores nas últimas N horas: médias, máximos, mínimos
+    e variação de temperatura, vibração e RPM. Use para perguntas sobre tendência ou evolução."""
     try:
-        from src.models.diagnostico import Diagnostico
+        rows = _exec("""
+            SELECT
+                COUNT(*) as total,
+                AVG(temperatura) as avg_temp, MAX(temperatura) as max_temp, MIN(temperatura) as min_temp,
+                AVG(rpm) as avg_rpm, MAX(rpm) as max_rpm,
+                AVG(vibracao) as avg_vib, MAX(vibracao) as max_vib,
+                MIN(timestamp) as desde, MAX(timestamp) as ate
+            FROM leitura_sensor
+            WHERE componente_id = :cid
+              AND timestamp >= NOW() - INTERVAL ':h hours'
+        """.replace(":h", str(hours)), {"cid": componente_id})
 
-        db = _get_session()
-        try:
-            rows = (
-                db.query(Diagnostico)
-                .filter(Diagnostico.componente_id == componente_id)
-                .order_by(Diagnostico.timestamp.desc())
-                .limit(limit)
-                .all()
-            )
-        finally:
-            db.close()
+        if not rows or rows[0][0] == 0:
+            rows = _exec("""
+                SELECT
+                    COUNT(*) as total,
+                    AVG(temperatura), MAX(temperatura), MIN(temperatura),
+                    AVG(rpm), MAX(rpm),
+                    AVG(vibracao), MAX(vibracao),
+                    MIN(timestamp), MAX(timestamp)
+                FROM leitura_sensor
+                WHERE componente_id = :cid
+            """, {"cid": componente_id})
+
+        r = rows[0]
+        total = r[0]
+        if not total:
+            return "Sem dados de tendência disponíveis."
+
+        def fmt(v): return f"{float(v):.2f}" if v is not None else "n/d"
+
+        return (
+            f"Tendências — componente {componente_id} (últimas {hours}h, {total} amostras):\n"
+            f"  Temperatura: média {fmt(r[1])}°C | máx {fmt(r[2])}°C | mín {fmt(r[3])}°C\n"
+            f"  RPM:         média {fmt(r[4])} | máx {fmt(r[5])}\n"
+            f"  Vibração:    média {fmt(r[6])} mm/s | máx {fmt(r[7])} mm/s\n"
+            f"  Período:     {r[8]} → {r[9]}"
+        )
+    except Exception as exc:
+        return f"Erro ao calcular tendências: {exc}"
+
+
+# ── Diagnósticos ──────────────────────────────────────────────────────────────
+
+@tool
+def get_db_diagnosticos(componente_id: int = 1, limit: int = 5) -> str:
+    """Busca diagnósticos ML do banco: status, severidade LSTM, risco, RUL, índice de saúde
+    e recomendações. Use para histórico de saúde do motor ou tendência de degradação."""
+    try:
+        rows = _exec("""
+            SELECT timestamp, is_anomaly, overall_status, lstm_severity,
+                   risk_level, rul_hours, maintenance_window_days,
+                   health_score, health_index, recommendation
+            FROM diagnostico
+            WHERE componente_id = :cid
+            ORDER BY timestamp DESC LIMIT :lim
+        """, {"cid": componente_id, "lim": limit})
 
         if not rows:
-            return f"Nenhum diagnostico encontrado no banco para o componente {componente_id}."
+            return f"Nenhum diagnóstico encontrado para componente {componente_id}."
 
-        lines = [f"Diagnosticos ML — componente {componente_id} (ultimos {len(rows)}):"]
+        lines = [f"Diagnósticos ML — componente {componente_id} (últimos {len(rows)}):"]
         for d in rows:
-            ts = d.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC") if d.timestamp else "n/d"
-            rul    = f"{d.rul_hours:.1f} h" if d.rul_hours is not None else "n/d"
-            janela = f"{d.maintenance_window_days:.1f} dias" if d.maintenance_window_days is not None else "n/d"
-            health = (
-                f"{d.health_index:.1f}%" if d.health_index is not None else
-                f"{d.health_score * 100:.1f}%" if d.health_score is not None else "n/d"
+            ts = d[0].strftime("%d/%m/%Y %H:%M UTC") if d[0] else "n/d"
+            hs = d[8] if d[8] is not None else (d[7] * 100 if d[7] is not None else None)
+            health = f"{hs:.1f}%" if hs is not None else "n/d"
+            rul = f"{d[5]:.1f}h" if d[5] is not None else "n/d"
+            janela = f"{d[6]:.1f} dias" if d[6] is not None else "n/d"
+            lines.append(
+                f"  [{ts}] Status: {d[2]} | Anomalia: {'SIM' if d[1] else 'não'} | "
+                f"Severidade: {d[3] or 'n/d'} | Risco: {d[4] or 'n/d'}\n"
+                f"    Saúde: {health} | RUL: {rul} | Próx. manutenção: {janela}\n"
+                f"    → {d[9] or 'sem recomendação'}"
             )
-            anomaly = "SIM" if d.is_anomaly else "nao"
-            lines.append(f"  [{ts}]")
-            lines.append(f"  - Anomalia: {anomaly}")
-            lines.append(f"  - Status geral: {d.overall_status}")
-            lines.append(f"  - Severidade LSTM: {d.lstm_severity or 'n/d'}")
-            lines.append(f"  - Nivel de risco: {d.risk_level or 'n/d'}")
-            lines.append(f"  - Indice de saude: {health}")
-            lines.append(f"  - RUL: {rul}")
-            lines.append(f"  - Janela de manutencao: {janela}")
-            lines.append(f"  - Recomendacao: {d.recommendation or 'n/d'}")
         return "\n".join(lines)
-
     except Exception as exc:
-        return f"Erro ao consultar diagnosticos no banco: {exc}"
+        return f"Erro ao consultar diagnósticos: {exc}"
+
+
+# ── Visão geral do sistema ─────────────────────────────────────────────────────
+
+@tool
+def get_system_overview() -> str:
+    """Retorna visão geral completa de toda a aplicação: plantas, motores, componentes,
+    total de leituras, último diagnóstico e alertas ativos. Use para perguntas sobre
+    o estado geral do sistema ou para iniciar uma análise."""
+    try:
+        ativos = _exec("SELECT id, name, location, status FROM ativos ORDER BY id")
+        motors = _exec("SELECT id, name, type, status, ativo_id FROM motors ORDER BY id")
+        comps = _exec("SELECT id, motor_id, name, type, status FROM components ORDER BY id")
+        leit_count = _exec("SELECT COUNT(*), MAX(timestamp) FROM leitura_sensor WHERE componente_id = 1")
+        diag = _exec("""
+            SELECT overall_status, health_score, health_index, risk_level, recommendation
+            FROM diagnostico WHERE componente_id = 1
+            ORDER BY timestamp DESC LIMIT 1
+        """)
+        alerts = _exec("SELECT COUNT(*) FROM alerts WHERE resolved_at IS NULL")
+        maint = _exec("SELECT COUNT(*) FROM maintenance WHERE completed_at IS NULL")
+
+        lines = ["=== VISÃO GERAL DO SISTEMA FORZY DIGITAL TWIN ===\n"]
+
+        lines.append("PLANTAS / ATIVOS:")
+        for a in ativos:
+            lines.append(f"  [{a[0]}] {a[1]} — {a[2]} | Status: {a[3]}")
+
+        lines.append("\nMOTORES:")
+        for m in motors:
+            lines.append(f"  [{m[0]}] {m[1]} ({m[2]}) | Status: {m[3]} | Planta: {m[4]}")
+
+        lines.append("\nCOMPONENTES:")
+        for c in comps:
+            lines.append(f"  [{c[0]}] {c[2]} ({c[3]}) | Motor: {c[1]} | Status: {c[4]}")
+
+        if leit_count:
+            total, ultima = leit_count[0]
+            ts = ultima.strftime("%d/%m/%Y %H:%M UTC") if ultima else "n/d"
+            lines.append(f"\nLEITURAS DE SENSOR: {total} registros | Última em: {ts}")
+
+        if diag:
+            d = diag[0]
+            hs = d[2] if d[2] is not None else (d[1] * 100 if d[1] is not None else None)
+            lines.append(
+                f"\nDIAGNÓSTICO MAIS RECENTE:\n"
+                f"  Status: {d[0]} | Saúde: {f'{hs:.1f}%' if hs else 'n/d'} | "
+                f"Risco: {d[3] or 'n/d'}\n  → {d[4] or 'sem recomendação'}"
+            )
+
+        lines.append(
+            f"\nALERTAS ATIVOS: {alerts[0][0] if alerts else 0} | "
+            f"MANUTENÇÕES PENDENTES: {maint[0][0] if maint else 0}"
+        )
+
+        return "\n".join(lines)
+    except Exception as exc:
+        return f"Erro ao buscar visão geral: {exc}"
+
+
+@tool
+def get_motor_details(motor_id: int = 1) -> str:
+    """Retorna especificações técnicas completas de um motor: placa de identificação,
+    tensão nominal, corrente, RPM, potência, fator de potência e tags dos sensores.
+    Use quando precisar das specs do motor para análise ou relatório."""
+    try:
+        rows = _exec("""
+            SELECT m.id, m.name, m.type, m.serial, m.status,
+                   m.nameplate_voltage, m.nameplate_current, m.nameplate_rpm,
+                   m.nameplate_power_kw, m.nameplate_frequency, m.nameplate_cos_phi,
+                   m.sensor_port1_tag, m.sensor_port2_tag, m.created_at,
+                   a.name as planta, a.location
+            FROM motors m
+            LEFT JOIN ativos a ON a.id = m.ativo_id
+            WHERE m.id = :mid
+        """, {"mid": motor_id})
+
+        if not rows:
+            return f"Motor {motor_id} não encontrado."
+
+        r = rows[0]
+        return (
+            f"Motor [{r[0]}] {r[1]}\n"
+            f"  Tipo: {r[2]} | Serial: {r[3]} | Status: {r[4]}\n"
+            f"  Planta: {r[14]} — {r[15]}\n"
+            f"  Placa de identificação:\n"
+            f"    Tensão: {r[5]}V | Corrente: {r[6]}A | RPM: {r[7]}\n"
+            f"    Potência: {r[8]}kW | Frequência: {r[9]}Hz | cos φ: {r[10]}\n"
+            f"  Sensores: Port1={r[11] or 'n/d'} | Port2={r[12] or 'n/d'}\n"
+            f"  Instalado em: {r[13].strftime('%d/%m/%Y') if r[13] else 'n/d'}"
+        )
+    except Exception as exc:
+        return f"Erro ao buscar motor: {exc}"
+
+
+# ── Alertas e Manutenção ───────────────────────────────────────────────────────
+
+@tool
+def get_alerts_history(motor_id: int = 1, limit: int = 10) -> str:
+    """Busca histórico completo de alertas (ativos e resolvidos) de um motor.
+    Use para avaliar frequência de problemas ou histórico de incidentes."""
+    try:
+        rows = _exec("""
+            SELECT id, severity, message, anomaly_score, rul_estimated,
+                   created_at, resolved_at
+            FROM alerts WHERE motor_id = :mid
+            ORDER BY created_at DESC LIMIT :lim
+        """, {"mid": motor_id, "lim": limit})
+
+        if not rows:
+            return f"Nenhum alerta registrado para motor {motor_id}."
+
+        lines = [f"Histórico de alertas — motor {motor_id} ({len(rows)} registros):"]
+        for r in rows:
+            ts = r[5].strftime("%d/%m/%Y %H:%M") if r[5] else "n/d"
+            status = "✓ resolvido" if r[6] else "⚠ ATIVO"
+            lines.append(
+                f"  [{ts}] {status} | {r[1].upper()} — {r[2]}\n"
+                f"    Score: {f'{r[3]:.4f}' if r[3] else 'n/d'} | RUL: {f'{r[4]:.1f}h' if r[4] else 'n/d'}"
+            )
+        return "\n".join(lines)
+    except Exception as exc:
+        return f"Erro ao buscar alertas: {exc}"
+
+
+@tool
+def get_maintenance_records(motor_id: int = 1, limit: int = 10) -> str:
+    """Busca registros de manutenção (preventiva, corretiva, preditiva) de um motor.
+    Use para histórico de intervenções, planejamento ou relatório de manutenção."""
+    try:
+        rows = _exec("""
+            SELECT id, type, scheduled_at, completed_at, notes, created_at
+            FROM maintenance WHERE motor_id = :mid
+            ORDER BY scheduled_at DESC LIMIT :lim
+        """, {"mid": motor_id, "lim": limit})
+
+        if not rows:
+            return f"Nenhum registro de manutenção para motor {motor_id}."
+
+        lines = [f"Manutenções — motor {motor_id} ({len(rows)} registros):"]
+        for r in rows:
+            sched = r[2].strftime("%d/%m/%Y") if r[2] else "n/d"
+            done = r[3].strftime("%d/%m/%Y") if r[3] else "pendente"
+            lines.append(
+                f"  [{sched}] {r[1].upper()} | Realizada: {done}\n"
+                f"    Obs: {r[4] or 'sem observações'}"
+            )
+        return "\n".join(lines)
+    except Exception as exc:
+        return f"Erro ao buscar manutenções: {exc}"

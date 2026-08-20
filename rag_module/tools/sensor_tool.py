@@ -1,5 +1,5 @@
 """
-Tools LangChain — sensores, ML, manutenção e alertas do motor Forzy.
+Tools LangChain — sensores, ML, manutenção e alertas em tempo real (API interna).
 """
 
 from __future__ import annotations
@@ -17,208 +17,144 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from rag_module.config import FORZY_API_BASE_URL
 
+_ml_cache: dict = {"models": None, "features_df": None}
 FORZY_CSV = PROJECT_ROOT / "History_32026-05-19T11-46-10-920.csv"
 
-_ml_cache: dict = {"models": None, "features_df": None}
+
+def _api_get(path: str, params: dict | None = None, timeout: float = 6.0):
+    """GET autenticado na API interna com token admin."""
+    import os
+    token = os.getenv("AGENT_API_TOKEN", "")
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    return httpx.get(f"{FORZY_API_BASE_URL}{path}", params=params, headers=headers, timeout=timeout)
 
 
-def _iso_vibration_label(value: float) -> str:
-    return "normal" if value < 2.8 else "atenção"
+def _iso_label(v: float | None) -> str:
+    if v is None: return "n/d"
+    return "normal" if v < 2.8 else "atenção" if v < 4.5 else "CRÍTICA"
 
 
-def _temp_label(value: float) -> str:
-    return "normal" if value < 80 else "ALERTA"
-
-
-def _format_sensor_data(data: dict, machine_id: str) -> str:
-    v1 = data.get("vibration_velocity_port1", data.get("vibration_port1", 0))
-    v2 = data.get("vibration_velocity_port2", data.get("vibration_port2", 0))
-    temp = data.get("temperature", 0)
-    a1 = data.get("acceleration_port1", 0)
-    a2 = data.get("acceleration_port2", 0)
-    ts = data.get("timestamp", datetime.now().isoformat())
-    status_note = f"\n- Status: {data['status']}" if data.get("status") else ""
-
-    return (
-        f"Leituras atuais do motor {machine_id}:\n"
-        f"  - Vibração Port1: {v1} mm/s (ISO: {_iso_vibration_label(float(v1))})\n"
-        f"  - Vibração Port2: {v2} mm/s (ISO: {_iso_vibration_label(float(v2))})\n"
-        f"  - Temperatura: {temp}°C ({_temp_label(float(temp))})\n"
-        f"  - Aceleração Port1: {a1}g | Port2: {a2}g\n"
-        f"  - Timestamp: {ts}{status_note}"
-    )
+def _temp_label(v: float | None) -> str:
+    if v is None: return "n/d"
+    return "normal" if v < 80 else "ALERTA"
 
 
 @tool
-def get_sensor_status(machine_id: str = "1") -> str:
-    """Busca leituras atuais dos sensores de vibração, aceleração e temperatura do motor. Use quando perguntarem sobre o estado atual, valores dos sensores ou condição do motor agora."""
-    url = f"{FORZY_API_BASE_URL}/sensors/{machine_id}/latest"
+def get_sensor_status(component_id: str = "1") -> str:
+    """Busca a leitura mais recente dos sensores (temperatura, vibração, RPM).
+    Use para saber o estado ATUAL do motor neste momento."""
     try:
-        response = httpx.get(url, timeout=5.0)
-        response.raise_for_status()
-        data = response.json()
+        r = _api_get(f"/sensors/component/{component_id}/latest")
+        r.raise_for_status()
+        d = r.json()
+        if not d:
+            return f"Sem leituras disponíveis para componente {component_id}."
+        ts = d.get("timestamp", "n/d")
+        temp = d.get("temperatura"); vib = d.get("vibracao"); rpm = d.get("rpm")
+        return (
+            f"Última leitura — componente {component_id} [{ts}]:\n"
+            f"  Temperatura: {temp}°C ({_temp_label(temp)})\n"
+            f"  Vibração: {vib} mm/s ({_iso_label(vib)})\n"
+            f"  RPM: {rpm or 'n/d'} | Corrente: {d.get('corrente') or 'n/d'}A | "
+            f"Voltagem: {d.get('voltagem') or 'n/d'}V"
+        )
+    except Exception as exc:
+        return f"Erro ao buscar leitura do sensor: {exc}"
+
+
+@tool
+def get_active_alerts(motor_id: str = "1") -> str:
+    """Lista alertas ATIVOS (não resolvidos) do motor.
+    Use quando perguntarem sobre alarmes, problemas em aberto ou notificações."""
+    try:
+        r = _api_get("/alerts/", params={"motor_id": motor_id, "resolved": "false"})
+        r.raise_for_status()
+        alerts = r.json()
+        if not alerts:
+            return f"Nenhum alerta ativo para motor {motor_id}."
+        lines = [f"Alertas ativos — motor {motor_id}:"]
+        for a in alerts:
+            lines.append(f"  [{a.get('severity','?').upper()}] {a.get('message','?')} | Score: {a.get('anomaly_score','n/d')}")
+        return "\n".join(lines)
+    except Exception as exc:
+        return f"Erro ao buscar alertas: {exc}"
+
+
+@tool
+def get_maintenance_history(motor_id: str = "1") -> str:
+    """Busca histórico de manutenções (preventiva, corretiva, preditiva) do motor.
+    Use para perguntas sobre última manutenção, intervenções ou planejamento."""
+    try:
+        r = _api_get("/maintenance/", params={"motor_id": motor_id})
+        r.raise_for_status()
+        records = r.json()
+        if not records:
+            return f"Nenhum registro de manutenção para motor {motor_id}."
+        lines = [f"Manutenções — motor {motor_id}:"]
+        for m in records:
+            sched = m.get("scheduled_at", "n/d")[:10] if m.get("scheduled_at") else "n/d"
+            done  = m.get("completed_at", "pendente")[:10] if m.get("completed_at") else "pendente"
+            lines.append(f"  [{sched}] {m.get('type','?').upper()} | Realizada: {done} | {m.get('notes') or 'sem obs.'}")
+        return "\n".join(lines)
+    except Exception as exc:
+        return f"Erro ao buscar manutenções: {exc}"
+
+
+@tool
+def get_ml_analysis(motor_id: str = "1") -> str:
+    """Executa análise ML completa: anomalias (Isolation Forest + LSTM) e RUL (vida útil restante).
+    Use para perguntas sobre saúde, anomalias, risco ou previsão de falha."""
+    url = f"{FORZY_API_BASE_URL}/ml/anomaly"
+    try:
+        r = httpx.post(url, json={"machine_id": motor_id}, timeout=12.0)
+        r.raise_for_status()
+        data = r.json()
     except Exception:
-        data = {
-            "machine_id": machine_id,
-            "timestamp": datetime.now().isoformat(),
-            "temperature": 34.5,
-            "vibration_velocity_port1": 2.1,
-            "vibration_velocity_port2": 2.3,
-            "acceleration_port1": 0.15,
-            "acceleration_port2": 0.18,
-            "status": "simulated - API offline",
-        }
+        try:
+            data = _run_local_ml(motor_id)
+        except Exception as exc:
+            return f"Análise ML indisponível: {exc}"
 
-    return _format_sensor_data(data, machine_id)
+    return _format_ml(data, motor_id)
 
 
-def _run_local_ml_analysis(machine_id: str) -> dict:
-    """Executa predict_single com cache lazy dos modelos e features."""
+def _run_local_ml(motor_id: str) -> dict:
     global _ml_cache
-
     if _ml_cache["models"] is None:
         from ml_module.inference.predict import load_all_models
-
         _ml_cache["models"] = load_all_models()
-
     if _ml_cache["features_df"] is None:
         from ml_module.features.feature_engineering import build_features, load_raw_csv
-
         _ml_cache["features_df"] = build_features(load_raw_csv(FORZY_CSV))
-
     from ml_module.inference.predict import predict_single
-
     return predict_single(_ml_cache["features_df"], _ml_cache["models"])
 
 
-def _format_ml_result(result: dict, machine_id: str) -> str:
-    estado = result.get("estado_operacional", "operando")
+def _format_ml(data: dict, motor_id: str) -> str:
+    if data.get("estado_operacional") == "desligado":
+        return f"Análise ML motor {motor_id}:\n  Estado: DESLIGADO\n  {data.get('combined', {}).get('recommendation','')}"
 
-    if estado == "desligado":
-        return (
-            f"Análise ML do motor {machine_id}:\n"
-            f"  ESTADO: Motor desligado\n"
-            f"  RECOMENDAÇÃO: {result['combined']['recommendation']}"
-        )
+    if_r    = data.get("isolation_forest", {})
+    lstm_r  = data.get("lstm", {})
+    rul_r   = data.get("rul", {})
+    comb    = data.get("combined", {})
+    hi      = data.get("health_index")
 
-    if_result = result["isolation_forest"]
-    lstm_result = result["lstm"]
-    rul_result = result["rul"]
-    combined = result["combined"]
-    health_index = result.get("health_index")
+    if_label = "anomalia" if if_r.get("is_anomaly") else "normal"
+    lstm_sev = lstm_r.get("severity", "n/d")
+    hi_str   = f"{hi:.1f}%" if hi is not None else "n/d"
 
-    if_label = "anomalia detectada" if if_result["is_anomaly"] else "normal"
-    lstm_extra = " (anomalia)" if lstm_result["is_anomaly"] else ""
-
-    if_score = if_result.get("anomaly_score")
-    lstm_error = lstm_result.get("reconstruction_error")
-    if_score_str = f"{if_score:.4f}" if if_score is not None else "n/a"
-    lstm_error_str = f"{lstm_error:.4f}" if lstm_error is not None else "n/a"
-
-    health_str = f"{health_index:.1f}%" if health_index is not None else "n/a"
-
-    rul_available = rul_result.get("available", True)
-    if rul_available and rul_result.get("rul_hours") is not None:
-        rul_hours = rul_result["rul_hours"]
-        maint_days = rul_result["maintenance_window_days"]
-        confidence = rul_result.get("confidence")
-        rul_str = (
-            f"  RUL (Vida Útil Restante): {rul_hours:.1f} horas\n"
-            f"    Janela manutenção: {maint_days:.1f} dias\n"
-            f"    Risco: {rul_result['risk_level']}"
-            + (f" | Confiança: {confidence:.1%}" if confidence is not None else "")
-        )
+    if rul_r.get("available") and rul_r.get("rul_hours") is not None:
+        rul_str = f"{rul_r['rul_hours']:.1f}h (risco: {rul_r.get('risk_level','?')})"
     else:
-        reason = rul_result.get("reason", "indisponível")
-        rul_str = f"  RUL (Vida Útil Restante): indisponível ({reason})"
+        rul_str = f"indisponível ({rul_r.get('reason','?')})"
 
     return (
-        f"Análise ML do motor {machine_id}:\n"
-        f"  ISOLATION FOREST: {if_label}\n"
-        f"    Score: {if_score_str}\n"
-        f"  LSTM AUTOENCODER: Severidade {lstm_result['severity']}\n"
-        f"    Erro reconstrução: {lstm_error_str}{lstm_extra}\n"
-        f"{rul_str}\n"
-        f"  ÍNDICE DE SAÚDE: {health_str}\n"
-        f"  STATUS GERAL: {combined['overall_status']}\n"
-        f"  RECOMENDAÇÃO: {combined['recommendation']}"
+        f"Análise ML — motor {motor_id}:\n"
+        f"  Isolation Forest: {if_label} (score: {if_r.get('anomaly_score','n/d')})\n"
+        f"  LSTM Autoencoder: severidade {lstm_sev} (erro: {lstm_r.get('reconstruction_error','n/d')})\n"
+        f"  RUL: {rul_str}\n"
+        f"  Índice de saúde: {hi_str}\n"
+        f"  Status geral: {comb.get('overall_status','n/d')}\n"
+        f"  Recomendação: {comb.get('recommendation','n/d')}"
     )
-
-
-@tool
-def get_ml_analysis(machine_id: str = "1") -> str:
-    """Executa análise completa de ML no motor: detecta anomalias com Isolation Forest e LSTM, e estima RUL (vida útil restante). Use quando perguntarem sobre anomalias, saúde do motor, previsão de falha ou manutenção."""
-    url = f"{FORZY_API_BASE_URL}/ml/anomaly"
-    try:
-        response = httpx.post(url, json={"machine_id": machine_id}, timeout=10.0)
-        response.raise_for_status()
-        data = response.json()
-        if "isolation_forest" in data:
-            return _format_ml_result(data, machine_id)
-        return str(data)
-    except Exception:
-        result = _run_local_ml_analysis(machine_id)
-        return _format_ml_result(result, machine_id)
-
-
-@tool
-def get_maintenance_history(machine_id: str = "1") -> str:
-    """Busca histórico de manutenções realizadas no motor. Use quando perguntarem sobre última manutenção, histórico de intervenções ou planejamento de manutenção."""
-    url = f"{FORZY_API_BASE_URL}/maintenance"
-    params = {"machine_id": machine_id}
-    try:
-        response = httpx.get(url, params=params, timeout=5.0)
-        response.raise_for_status()
-        data = response.json()
-        events = data if isinstance(data, list) else data.get("events", data.get("history", []))
-    except Exception:
-        events = [
-            {
-                "date": (datetime.now().replace(day=1)).strftime("%Y-%m-%d"),
-                "type": "Preventiva",
-                "description": "Inspeção geral, reaperto de fixações e lubrificação",
-                "days_ago": 30,
-            },
-            {
-                "date": "2026-03-10",
-                "type": "Corretiva",
-                "description": "Troca de rolamento lado acoplamento (Port1)",
-                "days_ago": 90,
-            },
-        ]
-
-    lines = [f"Histórico de manutenção — motor {machine_id}:"]
-    for event in events:
-        if isinstance(event, dict):
-            date = event.get("date", "N/D")
-            tipo = event.get("type", event.get("maintenance_type", "N/D"))
-            desc = event.get("description", event.get("notes", ""))
-            ago = event.get("days_ago")
-            ago_str = f" (há {ago} dias)" if ago else ""
-            lines.append(f"  - [{date}] {tipo}: {desc}{ago_str}")
-        else:
-            lines.append(f"  - {event}")
-
-    return "\n".join(lines)
-
-
-@tool
-def get_active_alerts(machine_id: str = "1") -> str:
-    """Lista alertas ativos do motor. Use quando perguntarem sobre alertas, alarmes ou problemas reportados."""
-    url = f"{FORZY_API_BASE_URL}/alerts"
-    params = {"machine_id": machine_id, "resolved": "false"}
-    try:
-        response = httpx.get(url, params=params, timeout=5.0)
-        response.raise_for_status()
-        data = response.json()
-        alerts = data if isinstance(data, list) else data.get("alerts", [])
-        if not alerts:
-            return f"Nenhum alerta ativo para o motor {machine_id}."
-        lines = [f"Alertas ativos — motor {machine_id}:"]
-        for alert in alerts:
-            lines.append(
-                f"  - [{alert.get('severity', 'N/D')}] {alert.get('message', alert)}"
-            )
-        return "\n".join(lines)
-    except Exception:
-        return "Nenhum alerta ativo (API offline - dados simulados)"
