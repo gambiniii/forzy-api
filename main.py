@@ -5,8 +5,9 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.db.postgres import create_tables
-from src.routers import auth, alerts, maintenance, ml, aneel
+from src.routers import auth, alerts, maintenance, ml, aneel, ativos, motors
 from src.routers import maquinas, componentes, atributos, leituras, plantas, diagnosticos
+from src.routers import components_api, sensors_api, analysis_api
 from rag_module.api.router import router as chat_router
 
 logging.basicConfig(
@@ -31,14 +32,19 @@ app.add_middleware(
 )
 
 app.include_router(auth.router,         prefix="/auth",        tags=["Auth"])
+app.include_router(ativos.router,       prefix="/ativos",      tags=["Ativos"])
+app.include_router(motors.router,       prefix="/motors",      tags=["Motors"])
 app.include_router(plantas.router,      prefix="/plantas",     tags=["Plantas"])
 app.include_router(maquinas.router,     prefix="/maquinas",    tags=["Máquinas"])
 app.include_router(componentes.router,  prefix="/componentes", tags=["Componentes"])
 app.include_router(atributos.router,    prefix="/atributos",   tags=["Atributos EAV"])
 app.include_router(leituras.router,     prefix="/leituras",    tags=["Leituras de Sensor"])
 app.include_router(diagnosticos.router, prefix="/diagnosticos", tags=["Diagnósticos ML"])
-app.include_router(alerts.router,       prefix="/alerts",      tags=["Alertas"])
-app.include_router(maintenance.router,  prefix="/maintenance", tags=["Manutenção"])
+app.include_router(components_api.router, prefix="/components",  tags=["Components"])
+app.include_router(sensors_api.router,    prefix="/sensors",     tags=["Sensors"])
+app.include_router(analysis_api.router,   prefix="/analysis",    tags=["Analysis"])
+app.include_router(alerts.router,         prefix="/alerts",      tags=["Alertas"])
+app.include_router(maintenance.router,    prefix="/maintenance", tags=["Manutenção"])
 app.include_router(ml.router,           prefix="/ml",          tags=["ML / Predição"])
 app.include_router(aneel.router,        prefix="/aneel",       tags=["ANEEL / Tensão"])
 app.include_router(chat_router,                                tags=["Chat / RAG"])
