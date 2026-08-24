@@ -68,12 +68,13 @@ async def startup():
     import asyncio
     create_tables()
     _load_ml_models()
-    try:
-        from src.services.forzy_poller import poll_loop
-        asyncio.create_task(poll_loop())
-        logging.getLogger("app").info("Forzy poller iniciado em background.")
-    except Exception as e:
-        logging.getLogger("app").warning("Forzy poller não iniciado: %s", e)
+    # Poller desativado — coleta sendo feita pela instância do parceiro para evitar duplicação
+    # try:
+    #     from src.services.forzy_poller import poll_loop
+    #     asyncio.create_task(poll_loop())
+    #     logging.getLogger("app").info("Forzy poller iniciado em background.")
+    # except Exception as e:
+    #     logging.getLogger("app").warning("Forzy poller não iniciado: %s", e)
 
 
 def _load_ml_models():
