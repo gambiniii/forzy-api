@@ -38,6 +38,7 @@ from rag_module.tools.db_tool import (
     get_sensor_trends,
     get_alerts_history,
     get_maintenance_records,
+    compare_motors,
 )
 from rag_module.tools.report_tool import generate_report, generate_motor_report
 
@@ -84,6 +85,7 @@ def build_agent(vectorstore=None):
         get_sensor_trends,
         get_alerts_history,
         get_maintenance_records,
+        compare_motors,
         # Relatórios
         generate_report,
         generate_motor_report,

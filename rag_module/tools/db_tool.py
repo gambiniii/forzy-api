@@ -273,6 +273,62 @@ def get_alerts_history(motor_id: int = 1, limit: int = 10) -> str:
 
 
 @tool
+def compare_motors() -> str:
+    """Compara S1 (componente_id=1) e S2 (componente_id=2) lado a lado:
+    última leitura, diagnóstico mais recente, alertas ativos e tendência.
+    Use quando o usuário perguntar sobre os dois motores, qual está melhor ou pior,
+    diferenças entre S1 e S2, ou estado geral da planta."""
+    try:
+        results = ["=== COMPARAÇÃO S1 vs S2 ===\n"]
+        for cid, label in [(1, "S1 — Motor WEG W22 (componente_id=1)"), (2, "S2 — Motor 2 (componente_id=2)")]:
+            results.append(f"── {label} ──")
+
+            # Última leitura
+            leit = _exec("""
+                SELECT timestamp, temperatura, vibracao, rpm
+                FROM leitura_sensor WHERE componente_id = :cid
+                ORDER BY timestamp DESC LIMIT 1
+            """, {"cid": cid})
+            if leit:
+                r = leit[0]
+                ts = r[0].strftime("%d/%m %H:%M") if r[0] else "n/d"
+                vib_label = ("normal" if r[2] is None or r[2] < 2.8 else "atenção" if r[2] < 4.5 else "CRÍTICA")
+                results.append(
+                    f"  Última leitura [{ts}]: Temp={r[1] or 'n/d'}°C | "
+                    f"Vibração={r[2] or 'n/d'} mm/s ({vib_label}) | RPM={r[3] or 'n/d'}"
+                )
+            else:
+                results.append("  Sem leituras.")
+
+            # Diagnóstico mais recente
+            diag = _exec("""
+                SELECT overall_status, health_score, health_index, risk_level, is_anomaly, rul_hours, recommendation
+                FROM diagnostico WHERE componente_id = :cid
+                ORDER BY timestamp DESC LIMIT 1
+            """, {"cid": cid})
+            if diag:
+                d = diag[0]
+                hs = d[2] if d[2] is not None else (d[1] * 100 if d[1] is not None else None)
+                rul = f"{d[5]:.1f}h" if d[5] is not None else "n/d"
+                results.append(
+                    f"  ML: status={d[0]} | saúde={f'{hs:.1f}%' if hs else 'n/d'} | "
+                    f"risco={d[3] or 'n/d'} | anomalia={'SIM' if d[4] else 'não'} | RUL={rul}"
+                )
+                results.append(f"  → {d[6] or 'sem recomendação'}")
+            else:
+                results.append("  Sem diagnósticos.")
+
+            # Alertas ativos
+            alerts = _exec("SELECT COUNT(*) FROM alerts WHERE motor_id = :mid AND resolved_at IS NULL", {"mid": cid})
+            results.append(f"  Alertas ativos: {alerts[0][0] if alerts else 0}")
+            results.append("")
+
+        return "\n".join(results)
+    except Exception as exc:
+        return f"Erro ao comparar motores: {exc}"
+
+
+@tool
 def get_maintenance_records(motor_id: int = 1, limit: int = 10) -> str:
     """Busca registros de manutenção (preventiva, corretiva, preditiva) de um motor.
     Use para histórico de intervenções, planejamento ou relatório de manutenção."""
