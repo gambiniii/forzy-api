@@ -1,4 +1,5 @@
 # Forzy Digital Twin API
+# RODAR NA VERSÃO 3.14.5 DO PYTHON!!!
 
 ## Como rodar localmente
 

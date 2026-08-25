@@ -1,4 +1,12 @@
 import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s  %(name)s — %(message)s",
+)
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.error").setLevel(logging.ERROR)  # mostra erros mas suprime WS disconnect noise
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -8,14 +16,12 @@ from src.db.postgres import create_tables
 from src.routers import auth, alerts, maintenance, ml, aneel, ativos, motors
 from src.routers import maquinas, componentes, atributos, leituras, plantas, diagnosticos
 from src.routers import components_api, sensors_api, analysis_api
-from rag_module.api.router import router as chat_router
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(levelname)s  %(name)s — %(message)s",
-)
-logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
-logging.getLogger("uvicorn.error").setLevel(logging.ERROR)  # mostra erros mas suprime WS disconnect noise
+try:
+    from rag_module.api.router import router as chat_router
+except ImportError as e:
+    chat_router = None
+    logging.getLogger("app").warning("Chat/RAG não carregado (dependência ausente): %s", e)
 
 app = FastAPI(
     title="Forzy Digital Twin API",
@@ -47,7 +53,8 @@ app.include_router(alerts.router,         prefix="/alerts",      tags=["Alertas"
 app.include_router(maintenance.router,    prefix="/maintenance", tags=["Manutenção"])
 app.include_router(ml.router,           prefix="/ml",          tags=["ML / Predição"])
 app.include_router(aneel.router,        prefix="/aneel",       tags=["ANEEL / Tensão"])
-app.include_router(chat_router,                                tags=["Chat / RAG"])
+if chat_router is not None:
+    app.include_router(chat_router, tags=["Chat / RAG"])
 
 
 @app.exception_handler(SQLAlchemyError)
@@ -74,6 +81,12 @@ async def startup():
         logging.getLogger("app").info("Forzy poller iniciado em background.")
     except Exception as e:
         logging.getLogger("app").warning("Forzy poller não iniciado: %s", e)
+    try:
+        from src.services.diagnostico_scheduler import diagnostico_loop
+        asyncio.create_task(diagnostico_loop())
+        logging.getLogger("app").info("Diagnostico scheduler iniciado em background.")
+    except Exception as e:
+        logging.getLogger("app").warning("Diagnostico scheduler não iniciado: %s", e)
 
 
 def _load_ml_models():
