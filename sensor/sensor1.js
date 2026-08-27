@@ -3,7 +3,7 @@ const path = require("path");
 const WebSocket = require("ws");
 
 const CSV_FILE    = path.join(__dirname, "History_32026-05-19T11-46-10-920.csv");
-const WS_URL      = "ws://localhost:8000/leituras/ws/1";  // port1 → componente_id=1
+const WS_URL      = "ws://localhost:8000/leituras/ws/2";  // S1 → componente_id=2 (Unidade S1)
 const INTERVAL_MS = 500;
 const PORT        = "port1";
 
