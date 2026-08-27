@@ -157,9 +157,9 @@ def get_system_overview() -> str:
     total de leituras, último diagnóstico e alertas ativos. Use para perguntas sobre
     o estado geral do sistema ou para iniciar uma análise."""
     try:
-        ativos = _exec("SELECT id, name, location, status FROM ativos ORDER BY id")
-        motors = _exec("SELECT id, name, type, status, ativo_id FROM motors ORDER BY id")
-        comps = _exec("SELECT id, motor_id, name, type, status FROM components ORDER BY id")
+        ativos = _exec("SELECT id, nome, localizacao, ativo FROM planta ORDER BY id")
+        motors = _exec("SELECT id, nome, tipo, status, planta_id FROM maquina ORDER BY id")
+        comps = _exec("SELECT id, maquina_id, nome, tipo, status FROM componente ORDER BY id")
         leit_count = _exec("SELECT COUNT(*), MAX(timestamp) FROM leitura_sensor WHERE componente_id = 1")
         diag = _exec("""
             SELECT overall_status, health_score, health_index, risk_level, recommendation
@@ -210,18 +210,19 @@ def get_system_overview() -> str:
 @tool
 def get_motor_details(motor_id: int = 1) -> str:
     """Retorna especificações técnicas completas de um motor: placa de identificação,
-    tensão nominal, corrente, RPM, potência, fator de potência e tags dos sensores.
+    tensão nominal, corrente, RPM, potência e fator de potência.
     Use quando precisar das specs do motor para análise ou relatório."""
     try:
         rows = _exec("""
-            SELECT m.id, m.name, m.type, m.serial, m.status,
-                   m.nameplate_voltage, m.nameplate_current, m.nameplate_rpm,
-                   m.nameplate_power_kw, m.nameplate_frequency, m.nameplate_cos_phi,
-                   m.sensor_port1_tag, m.sensor_port2_tag, m.created_at,
-                   a.name as planta, a.location
-            FROM motors m
-            LEFT JOIN ativos a ON a.id = m.ativo_id
-            WHERE m.id = :mid
+            SELECT mq.id, mq.nome, mq.tipo, mq.status,
+                   esp.tensao_nominal, esp.corrente_nominal, esp.rpm_nominal,
+                   esp.potencia_kw, esp.frequencia_hz, esp.numero_polos, esp.rendimento,
+                   pl.nome as planta, pl.localizacao
+            FROM maquina mq
+            LEFT JOIN componente c ON c.maquina_id = mq.id
+            LEFT JOIN especificacao_motor esp ON esp.componente_id = c.id
+            LEFT JOIN planta pl ON pl.id = mq.planta_id
+            WHERE mq.id = :mid
         """, {"mid": motor_id})
 
         if not rows:
@@ -230,13 +231,11 @@ def get_motor_details(motor_id: int = 1) -> str:
         r = rows[0]
         return (
             f"Motor [{r[0]}] {r[1]}\n"
-            f"  Tipo: {r[2]} | Serial: {r[3]} | Status: {r[4]}\n"
-            f"  Planta: {r[14]} — {r[15]}\n"
+            f"  Tipo: {r[2]} | Status: {r[3]}\n"
+            f"  Planta: {r[11]} — {r[12]}\n"
             f"  Placa de identificação:\n"
-            f"    Tensão: {r[5]}V | Corrente: {r[6]}A | RPM: {r[7]}\n"
-            f"    Potência: {r[8]}kW | Frequência: {r[9]}Hz | cos φ: {r[10]}\n"
-            f"  Sensores: Port1={r[11] or 'n/d'} | Port2={r[12] or 'n/d'}\n"
-            f"  Instalado em: {r[13].strftime('%d/%m/%Y') if r[13] else 'n/d'}"
+            f"    Tensão: {r[4]}V | Corrente: {r[5]}A | RPM: {r[6]}\n"
+            f"    Potência: {r[7]}kW | Frequência: {r[8]}Hz | Polos: {r[9]} | Rendimento: {r[10]}%"
         )
     except Exception as exc:
         return f"Erro ao buscar motor: {exc}"

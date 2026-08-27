@@ -63,7 +63,7 @@ def get_analysis_report(
     _=Depends(get_current_user),
 ):
     comp_row = db.execute(text(
-        "SELECT id FROM components WHERE motor_id = :mid LIMIT 1"
+        "SELECT id FROM componente WHERE maquina_id = :mid LIMIT 1"
     ), {"mid": motor_id}).fetchone()
     if not comp_row:
         raise HTTPException(status_code=404, detail="Nenhum componente para este motor")

@@ -45,9 +45,13 @@ def _get_db_data(componente_id: int, motor_id: int = 1):
         """), {"mid": motor_id}).fetchall()
 
         motor = db.execute(text("""
-            SELECT m.name, m.type, m.serial, m.nameplate_voltage, m.nameplate_current,
-                   m.nameplate_rpm, m.nameplate_power_kw, a.name as planta, a.location
-            FROM motors m LEFT JOIN ativos a ON a.id = m.ativo_id WHERE m.id = :mid
+            SELECT mq.nome, mq.tipo, NULL, esp.tensao_nominal, esp.corrente_nominal,
+                   esp.rpm_nominal, esp.potencia_kw, pl.nome as planta, pl.localizacao
+            FROM maquina mq
+            LEFT JOIN componente c ON c.maquina_id = mq.id
+            LEFT JOIN especificacao_motor esp ON esp.componente_id = c.id
+            LEFT JOIN planta pl ON pl.id = mq.planta_id
+            WHERE mq.id = :mid
         """), {"mid": motor_id}).fetchone()
 
         return diag, list(leituras), list(alerts), motor

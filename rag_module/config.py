@@ -45,22 +45,25 @@ ARQUITETURA DO SISTEMA
 • Relatórios: PDF, Excel (.xlsx) e Word (.docx) gerados sob demanda
 
 MOTORES MONITORADOS:
-  S1 → Motor WEG W22 3cv | componente_id=1 | motor_id=1
-       Potência: 3cv (2.237kW) | 60Hz | 110-127/220-254V | 3600rpm | IP55
-       Sensor: Pepperl+Fuchs VIM32PL — range 0-128mm/s, 0-10g rms
-  S2 → Motor 2 (sensor S2)   | componente_id=2 | motor_id=2
-       Parâmetros físicos idênticos ao S1; S1 e S2 são motores DISTINTOS
+  Motor WEG W22 (FIAP)              | componente_id=1 | maquina_id=1
+  Motor WEG W22 Unidade S2 (FORZY)  | componente_id=2 | maquina_id=2 — sensor S2
+  Motor WEG W22 Unidade S1 (FORZY)  | componente_id=3 | maquina_id=3 — sensor S1
+       Potência: 2kW | 60Hz | 220V | 3525rpm | 2 polos
+       S1 e S2 são motores físicos DISTINTOS, cada um com seu próprio componente_id
 
-BANCO DE DADOS (tabelas principais):
-  ativos          → plantas/instalações (id, name, location, status)
-  motors          → motores (id, name, type, serial, status, ativo_id, nameplate_*)
-  components      → componentes físicos (id, motor_id, name, type, status)
+BANCO DE DADOS (tabelas principais, schema em português — fonte única de verdade):
+  planta          → plantas/instalações (id, nome, localizacao, cidade, estado, ativo)
+  maquina         → motores (id, nome, tipo, fabricante, ano_instalacao, status, planta_id)
+  componente      → componentes físicos (id, maquina_id, nome, tipo, status)
+  especificacao_motor → placa de identificação (componente_id, potencia_kw, tensao_nominal,
+                    corrente_nominal, rpm_nominal, frequencia_hz, numero_polos, rendimento)
+  atributo / componente_atributo_valor → especificações técnicas detalhadas (EAV)
   leitura_sensor  → histórico de leituras (componente_id, timestamp, temperatura, rpm, vibracao)
   diagnostico     → resultados ML (componente_id, overall_status, is_anomaly, lstm_severity,
                     risk_level, rul_hours, maintenance_window_days, health_score, recommendation)
-  alerts          → alertas (motor_id, severity, message, anomaly_score, resolved_at)
-  maintenance     → manutenções (motor_id, type, scheduled_at, completed_at, notes)
-  forzy_sensor_readings → raw das leituras físicas do sensor
+  alerts          → alertas (motor_id → maquina.id, severity, message, anomaly_score, resolved_at)
+  maintenance     → manutenções (motor_id → maquina.id, type, scheduled_at, completed_at, notes)
+  forzy_sensor_readings → raw das leituras físicas do sensor (backup, não usar pra análise)
 
 MODELOS ML ATIVOS:
   • Isolation Forest — detecção de anomalias (features de vibração/temperatura)
@@ -85,9 +88,9 @@ API ENDPOINTS PRINCIPAIS:
   GET  /alerts/?motor_id=&resolved=     → alertas
   GET  /maintenance/?motor_id=          → manutenções
   POST /chat                            → este agente
-  GET  /ativos/                         → plantas
-  GET  /motors/                         → motores
-  GET  /components/                     → componentes
+  GET  /plantas/                        → plantas
+  GET  /maquinas/                       → motores
+  GET  /componentes/                    → componentes
 
 ═══════════════════════════════════════════════════════
 SUAS CAPACIDADES (tools disponíveis)

@@ -370,12 +370,62 @@ def migration_006_diagnostico(db):
         conn.close()
 
 
+def migration_007_drop_english_duplicates(db):
+    """Remove o schema em inglês (motors/components/ativos/anomalia) que duplicava
+    maquina/componente/planta/diagnostico. Não mexe em leitura_sensor nem
+    forzy_sensor_readings (medições, fora de escopo). alerts/maintenance/documents/
+    process_flows são mantidos — só repontuamos as FKs deles pras tabelas em
+    português (todas as tabelas afetadas estão vazias, sem risco de dado)."""
+    conn = db.bind.connect()
+    try:
+        # 1) repontua alerts/maintenance/documents (motor_id -> motors) para maquina
+        conn.execute(text("""
+            ALTER TABLE alerts DROP CONSTRAINT IF EXISTS alerts_machine_id_fkey;
+            ALTER TABLE alerts ADD CONSTRAINT alerts_motor_id_fkey
+                FOREIGN KEY (motor_id) REFERENCES maquina(id);
+
+            ALTER TABLE maintenance DROP CONSTRAINT IF EXISTS maintenance_machine_id_fkey;
+            ALTER TABLE maintenance ADD CONSTRAINT maintenance_motor_id_fkey
+                FOREIGN KEY (motor_id) REFERENCES maquina(id);
+
+            ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_motor_id_fkey;
+            ALTER TABLE documents ADD CONSTRAINT documents_motor_id_fkey
+                FOREIGN KEY (motor_id) REFERENCES maquina(id);
+        """))
+        conn.commit()
+
+        # 2) repontua process_flows (ativo_id -> ativos) para planta
+        conn.execute(text("""
+            ALTER TABLE process_flows DROP CONSTRAINT IF EXISTS process_flows_ativo_id_fkey;
+            ALTER TABLE process_flows ADD CONSTRAINT process_flows_planta_id_fkey
+                FOREIGN KEY (ativo_id) REFERENCES planta(id);
+        """))
+        conn.commit()
+
+        # 3) dropa a FK de motors -> process_flows (motors vai ser removida a seguir)
+        conn.execute(text("ALTER TABLE motors DROP CONSTRAINT IF EXISTS motors_process_flow_id_fkey"))
+        conn.commit()
+
+        # 4) dropa components (única referência era motors, já tratada acima)
+        conn.execute(text("DROP TABLE IF EXISTS components CASCADE"))
+        conn.commit()
+
+        # 5) dropa os 4 duplicados propriamente ditos
+        conn.execute(text("DROP TABLE IF EXISTS motors CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS ativos CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS anomalia CASCADE"))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 MIGRATIONS = [
     ("004_planta",                        migration_004_planta),
     ("003_motor_weg_w22_monofasico",      migration_003_motor_weg_w22_monofasico),
     ("002_motor_weg_w22",                 migration_002_motor_weg_w22),
     ("005_anomalia",                      migration_005_anomalia),
     ("006_diagnostico",                   migration_006_diagnostico),
+    ("007_drop_english_duplicates",       migration_007_drop_english_duplicates),
 ]
 
 
