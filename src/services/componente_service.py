@@ -2,7 +2,7 @@ from datetime import date
 from typing import Optional
 
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from src.models.componente import Componente, EspecificacaoMotor
 from src.models.enums import StatusEnum
@@ -10,14 +10,19 @@ from src.models.maquina import Maquina
 
 
 def list_componentes(db: Session, maquina_id: Optional[int]) -> list[Componente]:
-    query = db.query(Componente)
+    query = db.query(Componente).options(joinedload(Componente.especificacao_motor))
     if maquina_id:
         query = query.filter(Componente.maquina_id == maquina_id)
     return query.all()
 
 
 def get_componente(db: Session, componente_id: int) -> Componente:
-    comp = db.query(Componente).filter(Componente.id == componente_id).first()
+    comp = (
+        db.query(Componente)
+        .options(joinedload(Componente.especificacao_motor))
+        .filter(Componente.id == componente_id)
+        .first()
+    )
     if not comp:
         raise HTTPException(status_code=404, detail="Componente não encontrado")
     return comp
