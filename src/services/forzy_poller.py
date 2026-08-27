@@ -5,11 +5,13 @@ Endpoints:
   GET /get_s1 → {"dados1": {"Velocidade": float, "Aceleração": float, "Temperatura": float}}
   GET /get_s2 → {"dados2": {"Velocidade": float, "Aceleração": float, "Temperatura": float}}
 
-S1 e S2 são motores físicos DISTINTOS (não dois sensores do mesmo motor) —
-cada um é gravado em leitura_sensor sob seu próprio componente_id, sem média
-entre os dois.
+Roteamento de componentes (DB):
+  S1 → componente_id=3  (FORZY — Motor WEG W22 Unidade S1)
+  S2 → componente_id=2  (FORZY — Motor WEG W22 Unidade S2) ← parceiro já escreve aqui
+       componente_id=1  (FIAP  — Motor Monofásico WEG W22) ← parceiro escreve S1 aqui
 
-Grava em PostgreSQL RDS (leitura_sensor) a cada POLL_INTERVAL_SECONDS.
+Esta instância escreve APENAS S1 → componente_id=3 (FORZY S1),
+sem conflitar com o poller do parceiro que cobre FIAP e FORZY S2.
 """
 
 import asyncio
@@ -26,9 +28,11 @@ FORZY_BASE_URL = settings.FORZY_SENSOR_URL
 POLL_INTERVAL_SECONDS = 10
 HTTP_TIMEOUT = 8.0
 
-COMPONENTE_ID_S1 = 1  # Motor WEG W22
-COMPONENTE_ID_S2 = 2  # Motor 2 (S2)
-COMPONENTE_IDS = [COMPONENTE_ID_S1, COMPONENTE_ID_S2]
+# Nossa instância cobre apenas S1 → FORZY (comp 3)
+# Parceiro cobre: S1 → FIAP (comp 1), S2 → FORZY (comp 2)
+COMPONENTE_ID_S1 = 3  # FORZY — Motor WEG W22 Unidade S1
+COMPONENTE_ID_S2 = 2  # FORZY — Motor WEG W22 Unidade S2 (parceiro já cobre)
+COMPONENTE_IDS = [COMPONENTE_ID_S1]  # só S1 nesta instância
 
 
 async def _fetch_sensor(client: httpx.AsyncClient, endpoint: str) -> dict | None:
@@ -110,16 +114,17 @@ def _write_reading_to_influx(componente_id: int, dados: dict) -> None:
 
 
 async def poll_loop() -> None:
-    """Loop principal — coleta contínua sem restrição de janela horária."""
+    """Loop principal — coleta S1 para FORZY Unidade S1 (componente_id=3).
+    S2 é coberto pelo poller do parceiro (componente_id=2).
+    """
     logger.info(
-        "Poller Forzy iniciado — URL: %s | intervalo: %ds | S1→componente=%d | S2→componente=%d",
-        FORZY_BASE_URL, POLL_INTERVAL_SECONDS, COMPONENTE_ID_S1, COMPONENTE_ID_S2,
+        "Poller Forzy iniciado — URL: %s | intervalo: %ds | S1→componente=%d (FORZY Unidade S1)",
+        FORZY_BASE_URL, POLL_INTERVAL_SECONDS, COMPONENTE_ID_S1,
     )
 
     async with httpx.AsyncClient(verify=False) as client:
         while True:
             s1 = await _fetch_sensor(client, f"{FORZY_BASE_URL}/get_s1")
-            s2 = await _fetch_sensor(client, f"{FORZY_BASE_URL}/get_s2")
 
             if s1:
                 d1 = s1.get("dados1", {})
@@ -130,18 +135,7 @@ async def poll_loop() -> None:
                     COMPONENTE_ID_S1, d1.get("Velocidade", 0),
                     d1.get("Aceleração", d1.get("Aceleracao", 0)), d1.get("Temperatura", 0),
                 )
-
-            if s2:
-                d2 = s2.get("dados2", {})
-                _write_reading_to_postgres(COMPONENTE_ID_S2, 2, d2)
-                _write_reading_to_influx(COMPONENTE_ID_S2, d2)
-                logger.info(
-                    "[poller] S2 (componente=%d): Vel=%.3f Acc=%.3f Tmp=%.1f",
-                    COMPONENTE_ID_S2, d2.get("Velocidade", 0),
-                    d2.get("Aceleração", d2.get("Aceleracao", 0)), d2.get("Temperatura", 0),
-                )
-
-            if not s1 and not s2:
-                logger.debug("[poller] Sensores indisponíveis. Aguardando...")
+            else:
+                logger.debug("[poller] S1 indisponível. Aguardando...")
 
             await asyncio.sleep(POLL_INTERVAL_SECONDS)

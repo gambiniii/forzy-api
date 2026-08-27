@@ -75,10 +75,12 @@ async def startup():
     import asyncio
     create_tables()
     _load_ml_models()
+    # Poller desta instância: apenas S1 → componente_id=3 (FORZY Unidade S1)
+    # Parceiro cobre: S1 → comp 1 (FIAP) e S2 → comp 2 (FORZY Unidade S2)
     try:
         from src.services.forzy_poller import poll_loop
         asyncio.create_task(poll_loop())
-        logging.getLogger("app").info("Forzy poller iniciado em background.")
+        logging.getLogger("app").info("Forzy poller iniciado — S1 → FORZY componente 3.")
     except Exception as e:
         logging.getLogger("app").warning("Forzy poller não iniciado: %s", e)
     try:
