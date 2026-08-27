@@ -160,10 +160,10 @@ def get_system_overview() -> str:
         ativos = _exec("SELECT id, nome, localizacao, ativo FROM planta ORDER BY id")
         motors = _exec("SELECT id, nome, tipo, status, planta_id FROM maquina ORDER BY id")
         comps = _exec("SELECT id, maquina_id, nome, tipo, status FROM componente ORDER BY id")
-        leit_count = _exec("SELECT COUNT(*), MAX(timestamp) FROM leitura_sensor WHERE componente_id = 1")
+        leit_count = _exec("SELECT COUNT(*), MAX(timestamp) FROM leitura_sensor")
         diag = _exec("""
             SELECT overall_status, health_score, health_index, risk_level, recommendation
-            FROM diagnostico WHERE componente_id = 1
+            FROM diagnostico
             ORDER BY timestamp DESC LIMIT 1
         """)
         alerts = _exec("SELECT COUNT(*) FROM alerts WHERE resolved_at IS NULL")
@@ -279,7 +279,7 @@ def compare_motors() -> str:
     diferenças entre S1 e S2, ou estado geral da planta."""
     try:
         results = ["=== COMPARAÇÃO S1 vs S2 ===\n"]
-        for cid, label in [(1, "S1 — Motor WEG W22 (componente_id=1)"), (2, "S2 — Motor 2 (componente_id=2)")]:
+        for cid, label in [(2, "S1 — Motor WEG W22 Unidade S1 (componente_id=2)"), (3, "S2 — Motor WEG W22 Unidade S2 (componente_id=3)")]:
             results.append(f"── {label} ──")
 
             # Última leitura

@@ -41,6 +41,7 @@ from rag_module.tools.db_tool import (
     compare_motors,
 )
 from rag_module.tools.report_tool import generate_report, generate_motor_report
+from rag_module.tools.web_search_tool import web_search
 
 logger = get_logger("forzy.agent")
 
@@ -91,6 +92,8 @@ def build_agent(vectorstore=None):
         generate_motor_report,
         # Documentação técnica
         create_rag_tool(vectorstore),
+        # Pesquisa web
+        web_search,
     ]
 
     llm = get_llm(temperature=0.1)
@@ -178,6 +181,17 @@ def chat(
             for tc in msg.tool_calls
         })
 
+        # Extrai token REPORT:: das respostas das tools (o LLM parafraseia o conteúdo)
+        import re as _re
+        report_token: str | None = None
+        for msg in result_messages:
+            content = msg.content if hasattr(msg, "content") else ""
+            if isinstance(content, str):
+                m = _re.search(r"REPORT::([\w\-]+\.(?:pdf|xlsx|docx))", content)
+                if m:
+                    report_token = m.group(1)
+                    break
+
         logger.info("Chat concluído", extra={
             "session_id": session_id,
             "tools_used": tools_used,
@@ -194,6 +208,7 @@ def chat(
             "session_id": session_id,
             "response_time_ms": round(timer.elapsed_ms),
             "fallback_used": False,
+            "report_token": report_token,
         }
 
     except Exception as exc:

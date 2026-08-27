@@ -35,11 +35,11 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 def _extract_report(answer: str) -> tuple[str, str | None]:
     """Extrai token REPORT:: ou PDF:: da resposta do agente."""
     import re
-    for pattern in (r"REPORT::([^\s\"']+)", r"PDF::([^\s\"']+\.pdf)"):
+    for pattern in (r"REPORT::([\w\-]+\.(?:pdf|xlsx|docx))", r"PDF::([\w\-]+\.pdf)"):
         m = re.search(pattern, answer)
         if m:
             filename = m.group(1)
-            clean = answer.replace(m.group(0), "").strip(" \n.,")
+            clean = answer.replace(m.group(0), "").strip(" \n.,`")
             return clean, filename
     return answer, None
 
@@ -226,6 +226,10 @@ async def send_message(request: ChatRequest):
                 ),
             )
             answer, report_filename = _extract_report(result["answer"])
+            # Prefere o token extraído diretamente das ToolMessages (mais confiável)
+            report_token = result.get("report_token")
+            if report_token:
+                report_filename = report_token
             report_url = f"/chat/report/{report_filename}" if report_filename else None
             return ChatResponse(
                 answer=answer,
