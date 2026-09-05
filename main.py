@@ -15,7 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from src.db.postgres import create_tables
 from src.routers import auth, alerts, maintenance, ml, aneel
 from src.routers import maquinas, componentes, atributos, leituras, plantas, diagnosticos
-from src.routers import sensors_api, analysis_api
+from src.routers import sensors_api, analysis_api, audit_log
 
 try:
     from rag_module.api.router import router as chat_router
@@ -50,6 +50,7 @@ app.include_router(alerts.router,         prefix="/alerts",      tags=["Alertas"
 app.include_router(maintenance.router,    prefix="/maintenance", tags=["Manutenção"])
 app.include_router(ml.router,           prefix="/ml",          tags=["ML / Predição"])
 app.include_router(aneel.router,        prefix="/aneel",       tags=["ANEEL / Tensão"])
+app.include_router(audit_log.router,    prefix="/audit-log",   tags=["Auditoria / Handoff"])
 if chat_router is not None:
     app.include_router(chat_router, tags=["Chat / RAG"])
 
@@ -72,7 +73,6 @@ async def startup():
     import asyncio
     create_tables()
     _load_ml_models()
-    # Poller cobre os dois sensores: S1 → componente 2, S2 → componente 3
     try:
         from src.services.forzy_poller import poll_loop
         asyncio.create_task(poll_loop())

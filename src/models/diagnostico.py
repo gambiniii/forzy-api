@@ -19,5 +19,9 @@ class Diagnostico(Base):
     health_score            = Column(Float, nullable=True)
     health_index            = Column(Float, nullable=True)         # 0-100%
     recommendation          = Column(String(500), nullable=True)
+    confidence              = Column(Float, nullable=True)         # 0-100% — ver ml_module.inference.predict._compute_confidence
+    threshold_status        = Column(String(20), nullable=True)    # nominal | atencao | critico (Metric Contract, independente do ML)
+    threshold_message       = Column(String(500), nullable=True)   # justificativa textual com os números do limite excedido
+    breached_metrics        = Column(String(200), nullable=True)   # métricas do Metric Contract que estouraram limite, ex: "velocidade,temperatura"
 
     componente = relationship("Componente", back_populates="diagnosticos")

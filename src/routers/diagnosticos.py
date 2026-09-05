@@ -33,6 +33,10 @@ class DiagnosticoOut(BaseModel):
     health_score: Optional[float]
     health_index: Optional[float]
     recommendation: Optional[str]
+    confidence: Optional[float] = None
+    threshold_status: Optional[str] = None
+    threshold_message: Optional[str] = None
+    breached_metrics: Optional[str] = None
 
     class Config:
         from_attributes = True

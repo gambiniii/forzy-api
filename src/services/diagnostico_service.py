@@ -18,6 +18,10 @@ def save_diagnostico(
     health_score: Optional[float] = None,
     health_index: Optional[float] = None,
     recommendation: Optional[str] = None,
+    confidence: Optional[float] = None,
+    threshold_status: Optional[str] = None,
+    threshold_message: Optional[str] = None,
+    breached_metrics: Optional[str] = None,
 ) -> Diagnostico:
     diagnostico = Diagnostico(
         componente_id=componente_id,
@@ -30,6 +34,10 @@ def save_diagnostico(
         health_score=health_score,
         health_index=health_index,
         recommendation=recommendation,
+        confidence=confidence,
+        threshold_status=threshold_status,
+        threshold_message=threshold_message,
+        breached_metrics=breached_metrics,
     )
     db.add(diagnostico)
     db.commit()

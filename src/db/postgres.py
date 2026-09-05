@@ -24,11 +24,12 @@ def create_tables():
     from src.models.user import User  # noqa
     from src.models.planta import Planta  # noqa
     from src.models.maquina import Maquina  # noqa
-    from src.models.componente import Componente, EspecificacaoMotor  # noqa
+    from src.models.componente import Componente, EspecificacaoMotor, ComponenteLimite  # noqa
     from src.models.atributo import Atributo, ComponenteAtributoValor  # noqa
     from src.models.leitura_sensor import LeituraSensor  # noqa
     from src.models.alert import Alert  # noqa
     from src.models.maintenance import Maintenance  # noqa
+    from src.models.audit_log import AuditLog  # noqa
 
     try:
         Base.metadata.create_all(bind=engine)

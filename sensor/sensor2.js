@@ -4,7 +4,7 @@ const WebSocket = require("ws");
 
 const CSV_FILE    = path.join(__dirname, "History_32026-05-19T11-46-10-920.csv");
 const WS_URL      = "ws://localhost:8000/leituras/ws/3";  // S2 → componente_id=3 (Unidade S2)
-const INTERVAL_MS = 1000;
+const INTERVAL_MS = 400;
 const PORT        = "port2";
 
 function loadRows() {

@@ -37,16 +37,26 @@ class ComponenteUpdate(BaseModel):
     status: Optional[StatusEnum] = None
 
 
+class LimitesSchema(BaseModel):
+    vib_atencao: Optional[float] = None
+    vib_critico: Optional[float] = None
+    temp_atencao: Optional[float] = None
+    temp_critico: Optional[float] = None
+
+
 def _register(r: APIRouter):
     from src.controllers.componente_controller import (
         ctrl_list_componentes, ctrl_get_componente, ctrl_create_componente,
         ctrl_update_componente, ctrl_upsert_especificacao_motor, ctrl_delete_componente,
+        ctrl_get_limites, ctrl_upsert_limites,
     )
     r.get("/",                                    response_model=None)(ctrl_list_componentes)
     r.get("/{componente_id}",                     response_model=None)(ctrl_get_componente)
     r.post("/",                                   response_model=None, status_code=201)(ctrl_create_componente)
     r.patch("/{componente_id}",                   response_model=None)(ctrl_update_componente)
     r.put("/{componente_id}/especificacao-motor", response_model=None)(ctrl_upsert_especificacao_motor)
+    r.get("/{componente_id}/limites",             response_model=None)(ctrl_get_limites)
+    r.put("/{componente_id}/limites",             response_model=None)(ctrl_upsert_limites)
     r.delete("/{componente_id}", status_code=204)(ctrl_delete_componente)
 
 

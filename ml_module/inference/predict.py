@@ -62,6 +62,24 @@ def _lstm_reconstruction_error(model, sequence: np.ndarray) -> float:
     return float(np.mean(np.square(sequence - reconstructed)))
 
 
+def _compute_confidence(lstm_error: float, lstm_threshold: float, if_score_raw: float, if_threshold: float) -> float:
+    """Score de confiança (0-100%) do diagnóstico combinado.
+
+    Heurística: quanto mais perto um modelo está da própria fronteira de
+    decisão, menos confiável é a classificação (não importa se ela caiu pra
+    o lado 'normal' ou 'anômalo' — perto da fronteira é sempre incerto).
+    Confiança alta = os dois modelos estão longe da fronteira, concordando
+    entre si sobre o quão normal/anômalo é o padrão atual.
+    """
+    lstm_dist = abs(lstm_error - lstm_threshold) / max(lstm_threshold, 1e-6)
+    lstm_conf = min(1.0, lstm_dist)
+
+    if_dist = abs(if_score_raw - if_threshold) / max(abs(if_threshold), 1e-6)
+    if_conf = min(1.0, if_dist)
+
+    return round(100 * (0.5 * lstm_conf + 0.5 * if_conf), 1)
+
+
 def _lstm_severity(error: float, threshold: float) -> str:
     """Mapeia erro de reconstrução para categoria de severidade."""
     if error < threshold * 1.5:
@@ -317,6 +335,8 @@ def predict_single(
             overall_status, rul_result["maintenance_window_days"]
         )
 
+    confidence = _compute_confidence(lstm_error, lstm_threshold, if_score_raw, if_threshold)
+
     return {
         "timestamp": last_timestamp,
         "estado_operacional": "operando",
@@ -339,6 +359,7 @@ def predict_single(
             "recommendation": recommendation,
         },
         "health_index": round(combined_health * 100, 1),
+        "confidence": confidence,
     }
 
 

@@ -4,11 +4,11 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from src.db.postgres import get_db
-from src.models.componente import Componente, EspecificacaoMotor
+from src.models.componente import Componente, EspecificacaoMotor, ComponenteLimite
 from src.models.enums import UserRoleEnum
 from src.routers.auth import get_current_user, require_role
-from src.routers.componentes import ComponenteCreate, ComponenteUpdate, EspecificacaoMotorSchema
-from src.services import componente_service
+from src.routers.componentes import ComponenteCreate, ComponenteUpdate, EspecificacaoMotorSchema, LimitesSchema
+from src.services import componente_service, limite_service
 
 
 def ctrl_list_componentes(
@@ -58,6 +58,23 @@ def ctrl_upsert_especificacao_motor(
     _=Depends(require_role(UserRoleEnum.admin, UserRoleEnum.technician)),
 ) -> EspecificacaoMotor:
     return componente_service.upsert_especificacao_motor(db, componente_id, data.model_dump(exclude_none=True))
+
+
+def ctrl_get_limites(
+    componente_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+) -> ComponenteLimite:
+    return limite_service.get_or_create_limites(db, componente_id)
+
+
+def ctrl_upsert_limites(
+    componente_id: int,
+    data: LimitesSchema,
+    db: Session = Depends(get_db),
+    _=Depends(require_role(UserRoleEnum.admin)),
+) -> ComponenteLimite:
+    return limite_service.upsert_limites(db, componente_id, **data.model_dump(exclude_none=True))
 
 
 def ctrl_delete_componente(

@@ -9,9 +9,6 @@ Roteamento de componentes (DB):
   S1 → componente_id=2  (Motor WEG W22 - Unidade S1)
   S2 → componente_id=3  (Motor WEG W22 - Unidade S2)
 
-Esta instância cobre os dois sensores — não depende de nenhuma outra instância
-rodando em paralelo.
-
 Grava em PostgreSQL RDS (leitura_sensor) a cada POLL_INTERVAL_SECONDS.
 """
 
