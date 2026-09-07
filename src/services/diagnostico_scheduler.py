@@ -61,7 +61,7 @@ def _classify_threshold(latest, limites) -> tuple[str, str, list[str]]:
     de ML). `vib_critico`/`vib_atencao` são calibrados para essa velocidade,
     não para aceleração — não trocar por `latest.vibracao` aqui.
     """
-    vib, temp = latest.rpm, latest.temperatura
+    vib, temp, acel = latest.rpm, latest.temperatura, latest.vibracao
     status = "nominal"
     msgs: list[str] = []
     breached: list[str] = []
@@ -85,6 +85,17 @@ def _classify_threshold(latest, limites) -> tuple[str, str, list[str]]:
             bump("critico", f"Temperatura em {temp:.1f}°C, acima do limite crítico de {limites.temp_critico:.1f}°C", "temperatura")
         elif temp >= limites.temp_atencao:
             bump("atencao", f"Temperatura em {temp:.1f}°C, acima do limite de atenção de {limites.temp_atencao:.1f}°C", "temperatura")
+
+    # Aceleração: é o canal que melhor denuncia rolamento, e sem ele o modelo 3D
+    # nunca conseguia destacar os mancais. `getattr` porque bancos que ainda não
+    # rodaram a migration 005 não têm as colunas.
+    acel_at = getattr(limites, "acel_atencao", None)
+    acel_cr = getattr(limites, "acel_critico", None)
+    if acel is not None and acel_at is not None and acel_cr is not None:
+        if acel >= acel_cr:
+            bump("critico", f"Aceleração em {acel:.3f} g, acima do limite crítico de {acel_cr:.3f} g", "aceleracao")
+        elif acel >= acel_at:
+            bump("atencao", f"Aceleração em {acel:.3f} g, acima do limite de atenção de {acel_at:.3f} g", "aceleracao")
 
     message = " ".join(msgs) if msgs else "Todos os parâmetros dentro dos limites contratuais."
     return status, message, breached

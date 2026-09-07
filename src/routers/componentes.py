@@ -38,10 +38,12 @@ class ComponenteUpdate(BaseModel):
 
 
 class LimitesSchema(BaseModel):
-    vib_atencao: Optional[float] = None
+    vib_atencao: Optional[float] = None    # mm/s — velocidade de vibração
     vib_critico: Optional[float] = None
-    temp_atencao: Optional[float] = None
+    temp_atencao: Optional[float] = None   # °C
     temp_critico: Optional[float] = None
+    acel_atencao: Optional[float] = None   # g — aceleração
+    acel_critico: Optional[float] = None
 
 
 def _register(r: APIRouter):

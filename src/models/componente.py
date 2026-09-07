@@ -45,9 +45,15 @@ class ComponenteLimite(Base):
     __tablename__ = "componente_limite"
 
     componente_id = Column(Integer, ForeignKey("componente.id"), primary_key=True)
+    # Comparados contra leitura_sensor.rpm, que guarda a VELOCIDADE de vibração
+    # em mm/s (o nome da coluna engana — não é rotação por minuto).
     vib_atencao   = Column(Float, nullable=False, default=1.8)   # mm/s — ISO 10816-1 Zona C (Classe I)
     vib_critico   = Column(Float, nullable=False, default=4.5)   # mm/s — ISO 10816-1 Zona D (Classe I)
     temp_atencao  = Column(Float, nullable=False, default=70.0)  # °C
     temp_critico  = Column(Float, nullable=False, default=90.0)  # °C
+    # Comparados contra leitura_sensor.vibracao, que guarda a ACELERAÇÃO em g.
+    # Defaults = baseline medido em operação (0,484 g) + 2 e + 4 desvios.
+    acel_atencao  = Column(Float, nullable=False, default=0.63)  # g
+    acel_critico  = Column(Float, nullable=False, default=0.78)  # g
 
     componente = relationship("Componente", back_populates="limite")

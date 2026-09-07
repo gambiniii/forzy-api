@@ -39,7 +39,14 @@ LSTM_CWRU_DIR = PROJECT_ROOT / "ml_module/models/anomaly/saved_cwru"
 HYBRID_RUL_DIR = PROJECT_ROOT / "ml_module/models/rul/saved_hybrid"
 
 WINDOW_SIZE = 60
-FORZY_FEATURE_COUNT = 61
+# `build_features` V2 produz 43 colunas (2 portas x 2 sinais x 3 estatísticas x
+# 3 janelas + 4 deltas + 2 desvio_iso + elapsed_seconds). A constante antiga
+# dizia 61, que era a contagem da V1 (com temperatura) e não casava com nada:
+# como `_scaler_matches_forzy` comparava contra 61 e o scaler CWRU tem 512, o
+# ramo CWRU era inalcançável e o sistema sempre caía no fallback Forzy. Ou seja,
+# os F1 de 0,9757/0,9846 anunciados para os modelos CWRU medem artefatos que
+# nunca estiveram no caminho de inferência.
+FORZY_FEATURE_COUNT = 43
 HYBRID_RUL_MIN = 80.0
 HYBRID_RUL_MAX = 160.0
 
@@ -56,10 +63,149 @@ def _feature_columns(features_df: pd.DataFrame) -> list[str]:
     return [col for col in features_df.columns if col != "timestamp"]
 
 
-def _lstm_reconstruction_error(model, sequence: np.ndarray) -> float:
-    """Calcula MSE de reconstrução para uma sequência (1, window, features)."""
+def _lstm_reconstruction_error(model, sequence: np.ndarray) -> tuple[float, np.ndarray]:
+    """Calcula o MSE de reconstrução de uma sequência (1, window, features).
+
+    Retorna `(mse_escalar, erro_por_feature)`. O escalar é NUMERICAMENTE IDÊNTICO
+    ao `np.mean(...)` da versão anterior — a média sobre todos os elementos é a
+    mesma coisa que a média das médias por feature, porque todas as features têm
+    a mesma contagem de amostras. Logo `reconstruction_error`, `threshold`,
+    `severity`, `confidence` e `combined_health` não mudam de valor: nenhum
+    consumidor existente quebra. O vetor por feature é informação NOVA, usada
+    para atribuir a anomalia a um grupo de componentes.
+    """
     reconstructed = model.predict(sequence, verbose=0)
-    return float(np.mean(np.square(sequence - reconstructed)))
+    sq = np.square(sequence - reconstructed)        # (1, window, n_features)
+    per_feature = np.mean(sq, axis=(0, 1))          # (n_features,)
+    return float(np.mean(sq)), per_feature
+
+
+# Grupos de evidência derivados da CONVENÇÃO DE NOME das features, não escritos
+# à mão — assim não divergem no primeiro retreino que renomear algo.
+def _feature_group(name: str) -> str | None:
+    """Classifica uma feature em eixo de evidência físico.
+
+    Os nomes seguem `{port}_{sinal}_rolling_{estatistica}_{janela}`,
+    `{port}_delta_{sinal}` e `{port}_{sinal}_desvio_iso`.
+    """
+    if "aceleracao" in name:
+        if "_std_" in name or "_max_" in name:
+            return "impacto"        # choque de alta frequência → rolamento
+        if name.startswith(("port1_delta", "port2_delta")):
+            return "transitorio"    # evento brusco → folga mecânica
+        return "aceleracao_nivel"
+    if "velocidade" in name:
+        if "_mean_" in name:
+            return "nivel"          # deriva de nível → desbalanceamento
+        if "_std_" in name or "_max_" in name:
+            return "transitorio"
+        if name.startswith(("port1_delta", "port2_delta")):
+            return "transitorio"
+        return "velocidade_nivel"
+    return None                     # elapsed_seconds e afins não entram
+
+
+_GRUPO_COMPONENTES = {
+    "impacto": {
+        "titulo": "Rolamentos e eixo",
+        "segmentos": ["empty_7", "empty_13"],
+        "leitura": "Choque de alta frequência com o nível médio ainda normal.",
+    },
+    "nivel": {
+        "titulo": "Rotor e balanceamento",
+        "segmentos": ["empty_23", "empty_2"],
+        "leitura": "Deriva sustentada do nível de vibração em janela longa.",
+    },
+    "transitorio": {
+        "titulo": "Fixação e carcaça",
+        "segmentos": ["empty_2"],
+        "leitura": "Variações bruscas e intermitentes com o nível médio normal.",
+    },
+}
+
+
+def _attribute(
+    per_feature: np.ndarray,
+    feature_names: list[str],
+    baseline: dict | None,
+) -> dict:
+    """Atribui a anomalia a um grupo de componentes a partir do erro por feature.
+
+    O erro por feature vem em ESPAÇO ESCALADO (MinMaxScaler). Ranquear o erro cru
+    mediria qual feature o autoencoder aprendeu pior, não qual está anômala — e
+    apontaria sempre a mesma peça, inclusive em amostras saudáveis. Por isso a
+    pontuação exige o baseline (média e desvio do erro por feature sobre o
+    treino) e usa z-score. Sem baseline no disco, devolvemos
+    `available: False` em vez de inventar atribuição.
+    """
+    if baseline is None:
+        return {
+            "available": False,
+            "reason": "Baseline de erro por feature ausente (lstm_feature_baseline.json). "
+                      "Sem ele o ranking mede qualidade de treino, não anomalia.",
+            "grupos": [],
+        }
+
+    mu = np.asarray(baseline.get("mean", []), dtype=float)
+    sigma = np.asarray(baseline.get("std", []), dtype=float)
+    if mu.shape != per_feature.shape or sigma.shape != per_feature.shape:
+        return {
+            "available": False,
+            "reason": f"Baseline com {mu.shape} features, erro com {per_feature.shape}. "
+                      "Artefatos de versões diferentes.",
+            "grupos": [],
+        }
+
+    z = (per_feature - mu) / np.maximum(sigma, 1e-9)
+
+    somas: dict[str, list[float]] = {}
+    for nome, zi in zip(feature_names, z):
+        g = _feature_group(nome)
+        if g in _GRUPO_COMPONENTES:
+            somas.setdefault(g, []).append(float(zi))
+
+    grupos = []
+    for g, zs in somas.items():
+        if not zs:
+            continue
+        meta = _GRUPO_COMPONENTES[g]
+        grupos.append({
+            "grupo": g,
+            "titulo": meta["titulo"],
+            "segmentos": meta["segmentos"],
+            "leitura": meta["leitura"],
+            "z_medio": round(sum(zs) / len(zs), 3),
+            "z_max": round(max(zs), 3),
+            "n_features": len(zs),
+        })
+    grupos.sort(key=lambda x: -x["z_max"])
+
+    # Sem z-score expressivo não há atribuição. Esse estado é obrigatório: num
+    # histórico 100% saudável, o ranking sempre elegeria ALGUMA peça, e ela
+    # estaria errada.
+    if not grupos or grupos[0]["z_max"] < 3.0:
+        return {
+            "available": True,
+            "atribuido": False,
+            "reason": "Erro de reconstrução distribuído entre as features, sem eixo dominante. "
+                      "Anomalia sem atribuição de componente.",
+            "grupos": grupos,
+        }
+
+    return {"available": True, "atribuido": True, "grupos": grupos}
+
+
+def _load_feature_baseline(lstm_dir: Path) -> dict | None:
+    """Carrega o baseline de erro por feature, tolerando ausência (diretórios
+    de modelo treinados antes desta funcionalidade não têm o arquivo)."""
+    path = lstm_dir / "lstm_feature_baseline.json"
+    if not path.exists():
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
 
 
 def _compute_confidence(lstm_error: float, lstm_threshold: float, if_score_raw: float, if_threshold: float) -> float:
@@ -161,12 +307,21 @@ def load_all_models() -> dict:
         rul_metrics["is_hybrid"] = False
         print("[OK] XGBoost RUL Forzy carregado (fallback)")
 
+    feature_baseline = _load_feature_baseline(lstm_dir)
+    if feature_baseline is None:
+        print(
+            "[AVISO] lstm_feature_baseline.json ausente em "
+            f"{lstm_dir} — atribuição por componente ficará indisponível. "
+            "Gere-o no retreino (ver train_pipeline)."
+        )
+
     return {
         "isolation_forest": (if_model, if_scaler, if_threshold),
         "lstm": (lstm_model, lstm_scaler, lstm_threshold),
         "rul": (rul_model, rul_scaler, rul_metrics),
         "if_version": if_version,
         "lstm_version": lstm_version,
+        "lstm_feature_baseline": feature_baseline,
     }
 
 
@@ -230,15 +385,22 @@ def predict_single(
 
     # --- LSTM Autoencoder ---
     window_data = features_df[feature_cols].values
-    if len(window_data) < WINDOW_SIZE:
-        padding = np.zeros((WINDOW_SIZE - len(window_data), window_data.shape[1]))
+    janela_completa = len(window_data) >= WINDOW_SIZE
+    if not janela_completa:
+        # Padding por REPETIÇÃO DA BORDA, não com zeros. Zero mm/s e zero g não
+        # são um estado neutro — são "motor parado", longe da variedade que o
+        # autoencoder aprendeu em regime. Com janela curta, o erro vinha
+        # dominado pelo padding, inflando falso positivo e destruindo qualquer
+        # ranking por feature.
+        faltam = WINDOW_SIZE - len(window_data)
+        padding = np.repeat(window_data[:1], faltam, axis=0)
         window_data = np.vstack([padding, window_data])
     else:
         window_data = window_data[-WINDOW_SIZE:]
 
     window_scaled = lstm_scaler.transform(window_data)
     lstm_sequence = window_scaled.reshape(1, WINDOW_SIZE, window_scaled.shape[1])
-    lstm_error = _lstm_reconstruction_error(lstm_model, lstm_sequence)
+    lstm_error, lstm_per_feature = _lstm_reconstruction_error(lstm_model, lstm_sequence)
     lstm_severity = _lstm_severity(lstm_error, lstm_threshold)
     lstm_is_anomaly = lstm_error > lstm_threshold
     lstm_normalized = LSTM_SEVERITY_SCORES[lstm_severity]
@@ -337,9 +499,23 @@ def predict_single(
 
     confidence = _compute_confidence(lstm_error, lstm_threshold, if_score_raw, if_threshold)
 
+    # Atribuição por grupo de componentes — CHAVE NOVA, consultiva. Nunca
+    # sobrescreve `overall_status`: é evidência para o operador e para o modelo
+    # 3D, não decisão automática.
+    if not janela_completa:
+        attribution = {
+            "available": False,
+            "reason": f"Janela incompleta ({len(features_df)} de {WINDOW_SIZE} leituras). "
+                      "Atribuição exige janela cheia para não refletir o padding.",
+            "grupos": [],
+        }
+    else:
+        attribution = _attribute(lstm_per_feature, feature_cols, models.get("lstm_feature_baseline"))
+
     return {
         "timestamp": last_timestamp,
         "estado_operacional": "operando",
+        "attribution": attribution,
         "isolation_forest": {
             "anomaly_score": if_score_raw,
             "is_anomaly": if_is_anomaly,

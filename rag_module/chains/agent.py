@@ -42,6 +42,11 @@ from rag_module.tools.db_tool import (
 )
 from rag_module.tools.report_tool import generate_report, generate_motor_report
 from rag_module.tools.web_search_tool import web_search
+from rag_module.tools.motor_parts_tool import (
+    get_motor_part_info,
+    diagnose_by_signals,
+    get_motor_baselines,
+)
 
 logger = get_logger("forzy.agent")
 
@@ -94,6 +99,10 @@ def build_agent(vectorstore=None):
         create_rag_tool(vectorstore),
         # Pesquisa web
         web_search,
+        # Peças do motor e diagnóstico por componente (modelo 3D)
+        get_motor_part_info,
+        diagnose_by_signals,
+        get_motor_baselines,
     ]
 
     llm = get_llm(temperature=0.1)
