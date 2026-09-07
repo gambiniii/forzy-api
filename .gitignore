@@ -10,3 +10,8 @@ ml_module/data/raw/*
 ml_module/data/processed/*
 ml_module/models/**/*.pkl
 ml_module/models/**/*.h5
+
+# Objetos dos detectores da bancada (23 MB). A inferencia reconstroi o
+# autoencoder do state_dict em modelos.json; Mahalanobis e IF so servem para a
+# comparacao, cujo resultado ja esta em metricas.json.
+ml_module/forzy/saved/detectores.joblib

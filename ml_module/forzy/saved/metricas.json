@@ -1,0 +1,312 @@
+{
+  "por_detector": {
+    "mahalanobis": {
+      "pr_auc_macro": 0.7889,
+      "roc_auc_macro": 0.7806,
+      "recall_macro_fp1": 0.5375,
+      "fp_controle": 0.0
+    },
+    "isolation_forest": {
+      "pr_auc_macro": 0.766,
+      "roc_auc_macro": 0.7518,
+      "recall_macro_fp1": 0.4445,
+      "fp_controle": 0.0
+    },
+    "autoencoder": {
+      "pr_auc_macro": 0.8841,
+      "roc_auc_macro": 0.8646,
+      "recall_macro_fp1": 0.7035,
+      "fp_controle": 0.0046
+    }
+  },
+  "celulas": [
+    {
+      "motor": "MOTOR-01",
+      "modo": "F1",
+      "severidade": "incipiente",
+      "pr_auc": 0.8934,
+      "roc_auc": 0.852,
+      "recall_fp1": 0.691
+    },
+    {
+      "motor": "MOTOR-01",
+      "modo": "F1",
+      "severidade": "moderada",
+      "pr_auc": 0.9682,
+      "roc_auc": 0.9553,
+      "recall_fp1": 0.8503
+    },
+    {
+      "motor": "MOTOR-01",
+      "modo": "F1",
+      "severidade": "severa",
+      "pr_auc": 0.9862,
+      "roc_auc": 0.9777,
+      "recall_fp1": 0.9616
+    },
+    {
+      "motor": "MOTOR-01",
+      "modo": "F2",
+      "severidade": "incipiente",
+      "pr_auc": 0.8393,
+      "roc_auc": 0.802,
+      "recall_fp1": 0.501
+    },
+    {
+      "motor": "MOTOR-01",
+      "modo": "F2",
+      "severidade": "moderada",
+      "pr_auc": 0.9245,
+      "roc_auc": 0.8969,
+      "recall_fp1": 0.7524
+    },
+    {
+      "motor": "MOTOR-01",
+      "modo": "F2",
+      "severidade": "severa",
+      "pr_auc": 0.9472,
+      "roc_auc": 0.9263,
+      "recall_fp1": 0.8253
+    },
+    {
+      "motor": "MOTOR-01",
+      "modo": "F3",
+      "severidade": "incipiente",
+      "pr_auc": 0.6149,
+      "roc_auc": 0.5711,
+      "recall_fp1": 0.1804
+    },
+    {
+      "motor": "MOTOR-01",
+      "modo": "F3",
+      "severidade": "moderada",
+      "pr_auc": 0.7077,
+      "roc_auc": 0.6522,
+      "recall_fp1": 0.2514
+    },
+    {
+      "motor": "MOTOR-01",
+      "modo": "F3",
+      "severidade": "severa",
+      "pr_auc": 0.7699,
+      "roc_auc": 0.7099,
+      "recall_fp1": 0.3839
+    },
+    {
+      "motor": "MOTOR-01",
+      "modo": "F4",
+      "severidade": "incipiente",
+      "pr_auc": 0.8771,
+      "roc_auc": 0.8256,
+      "recall_fp1": 0.6583
+    },
+    {
+      "motor": "MOTOR-01",
+      "modo": "F4",
+      "severidade": "moderada",
+      "pr_auc": 0.8771,
+      "roc_auc": 0.8256,
+      "recall_fp1": 0.6583
+    },
+    {
+      "motor": "MOTOR-01",
+      "modo": "F4",
+      "severidade": "severa",
+      "pr_auc": 0.8771,
+      "roc_auc": 0.8256,
+      "recall_fp1": 0.6583
+    },
+    {
+      "motor": "MOTOR-01",
+      "modo": "F5",
+      "severidade": "incipiente",
+      "pr_auc": 0.4569,
+      "roc_auc": 0.4505,
+      "recall_fp1": 0.0499
+    },
+    {
+      "motor": "MOTOR-01",
+      "modo": "F5",
+      "severidade": "moderada",
+      "pr_auc": 0.6445,
+      "roc_auc": 0.744,
+      "recall_fp1": 0.0499
+    },
+    {
+      "motor": "MOTOR-01",
+      "modo": "F5",
+      "severidade": "severa",
+      "pr_auc": 0.8425,
+      "roc_auc": 0.8798,
+      "recall_fp1": 0.1747
+    },
+    {
+      "motor": "MOTOR-01",
+      "modo": "F6",
+      "severidade": "incipiente",
+      "pr_auc": 1.0,
+      "roc_auc": 1.0,
+      "recall_fp1": 1.0
+    },
+    {
+      "motor": "MOTOR-01",
+      "modo": "F6",
+      "severidade": "moderada",
+      "pr_auc": 1.0,
+      "roc_auc": 1.0,
+      "recall_fp1": 1.0
+    },
+    {
+      "motor": "MOTOR-01",
+      "modo": "F6",
+      "severidade": "severa",
+      "pr_auc": 1.0,
+      "roc_auc": 1.0,
+      "recall_fp1": 1.0
+    },
+    {
+      "motor": "MOTOR-02",
+      "modo": "F1",
+      "severidade": "incipiente",
+      "pr_auc": 0.9142,
+      "roc_auc": 0.8855,
+      "recall_fp1": 0.7365
+    },
+    {
+      "motor": "MOTOR-02",
+      "modo": "F1",
+      "severidade": "moderada",
+      "pr_auc": 0.9858,
+      "roc_auc": 0.9772,
+      "recall_fp1": 0.9615
+    },
+    {
+      "motor": "MOTOR-02",
+      "modo": "F1",
+      "severidade": "severa",
+      "pr_auc": 0.9898,
+      "roc_auc": 0.9833,
+      "recall_fp1": 0.9731
+    },
+    {
+      "motor": "MOTOR-02",
+      "modo": "F2",
+      "severidade": "incipiente",
+      "pr_auc": 0.8884,
+      "roc_auc": 0.8514,
+      "recall_fp1": 0.6712
+    },
+    {
+      "motor": "MOTOR-02",
+      "modo": "F2",
+      "severidade": "moderada",
+      "pr_auc": 0.9477,
+      "roc_auc": 0.9249,
+      "recall_fp1": 0.8404
+    },
+    {
+      "motor": "MOTOR-02",
+      "modo": "F2",
+      "severidade": "severa",
+      "pr_auc": 0.9623,
+      "roc_auc": 0.9444,
+      "recall_fp1": 0.8846
+    },
+    {
+      "motor": "MOTOR-02",
+      "modo": "F3",
+      "severidade": "incipiente",
+      "pr_auc": 0.8502,
+      "roc_auc": 0.7939,
+      "recall_fp1": 0.6135
+    },
+    {
+      "motor": "MOTOR-02",
+      "modo": "F3",
+      "severidade": "moderada",
+      "pr_auc": 0.9072,
+      "roc_auc": 0.8682,
+      "recall_fp1": 0.7442
+    },
+    {
+      "motor": "MOTOR-02",
+      "modo": "F3",
+      "severidade": "severa",
+      "pr_auc": 0.9359,
+      "roc_auc": 0.9064,
+      "recall_fp1": 0.8192
+    },
+    {
+      "motor": "MOTOR-02",
+      "modo": "F4",
+      "severidade": "incipiente",
+      "pr_auc": 0.9166,
+      "roc_auc": 0.8685,
+      "recall_fp1": 0.7962
+    },
+    {
+      "motor": "MOTOR-02",
+      "modo": "F4",
+      "severidade": "moderada",
+      "pr_auc": 0.9166,
+      "roc_auc": 0.8685,
+      "recall_fp1": 0.7962
+    },
+    {
+      "motor": "MOTOR-02",
+      "modo": "F4",
+      "severidade": "severa",
+      "pr_auc": 0.9166,
+      "roc_auc": 0.8685,
+      "recall_fp1": 0.7962
+    },
+    {
+      "motor": "MOTOR-02",
+      "modo": "F5",
+      "severidade": "incipiente",
+      "pr_auc": 0.4703,
+      "roc_auc": 0.4904,
+      "recall_fp1": 0.0481
+    },
+    {
+      "motor": "MOTOR-02",
+      "modo": "F5",
+      "severidade": "moderada",
+      "pr_auc": 1.0,
+      "roc_auc": 1.0,
+      "recall_fp1": 1.0
+    },
+    {
+      "motor": "MOTOR-02",
+      "modo": "F5",
+      "severidade": "severa",
+      "pr_auc": 1.0,
+      "roc_auc": 1.0,
+      "recall_fp1": 1.0
+    },
+    {
+      "motor": "MOTOR-02",
+      "modo": "F6",
+      "severidade": "incipiente",
+      "pr_auc": 1.0,
+      "roc_auc": 1.0,
+      "recall_fp1": 1.0
+    },
+    {
+      "motor": "MOTOR-02",
+      "modo": "F6",
+      "severidade": "moderada",
+      "pr_auc": 1.0,
+      "roc_auc": 1.0,
+      "recall_fp1": 1.0
+    },
+    {
+      "motor": "MOTOR-02",
+      "modo": "F6",
+      "severidade": "severa",
+      "pr_auc": 1.0,
+      "roc_auc": 1.0,
+      "recall_fp1": 1.0
+    }
+  ]
+}

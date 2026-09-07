@@ -47,6 +47,7 @@ from rag_module.tools.motor_parts_tool import (
     diagnose_by_signals,
     get_motor_baselines,
 )
+from rag_module.tools.ml_atribuicao_tool import get_ml_atribuicao, get_ml_metricas
 
 logger = get_logger("forzy.agent")
 
@@ -103,6 +104,9 @@ def build_agent(vectorstore=None):
         get_motor_part_info,
         diagnose_by_signals,
         get_motor_baselines,
+        # Modelos de novidade — atribuição por componente e métricas
+        get_ml_atribuicao,
+        get_ml_metricas,
     ]
 
     llm = get_llm(temperature=0.1)
