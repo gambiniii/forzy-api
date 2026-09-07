@@ -138,6 +138,62 @@ Os episódios são ancorados **dentro dos trechos de operação**. Uma falha de
 rolamento não se manifesta com o eixo parado, e neste dataset a operação em
 regime só acontece em dois trechos, a cerca de 42 min e 2 h do início.
 
+## Atribuição: casamento de padrão com sinal, não magnitude
+
+Cada assinatura declara a **direção esperada** de cada feature, com sinal, e a
+pontuação é:
+
+```
+pontuação = Σ(z[f] · peso[f]) / Σ|peso[f]|  −  média(|z[f]|) das estáveis
+```
+
+Ranquear por magnitude bruta **não funciona**, e isso foi medido. Os vetores de
+z-score dos modos injetados no regime de operação:
+
+| modo | v_rms | v_roll_max | a_rms | crest | razao_av | v_roll_std |
+|---|---|---|---|---|---|---|
+| F1 desbalanceamento | +22,2 | +23,4 | +2,5 | −0,5 | **−15,0** | +2,1 |
+| F3 rolamento | +2,2 | +8,4 | +3,2 | +4,4 | **+3,6** | +0,8 |
+| F5 deriva de ganho | +6,1 | +8,0 | +4,2 | +0,3 | **+0,4** | +0,2 |
+| F6 perda de acionamento | −18,3 | −19,3 | −11,9 | +0,2 | −0,3 | 0,0 |
+
+`razao_av`, que é a razão entre aceleração e velocidade, é o discriminador. Ela
+despenca no desbalanceamento, porque a energia vai para 1× a rotação e a
+velocidade sobe muito mais que a aceleração. Sobe no rolamento, porque o impacto
+de alta frequência é aceleração. E fica em zero na deriva de ganho, porque todos
+os canais escalam juntos e a razão entre eles se preserva.
+
+Sem os pesos com sinal, a deriva de calibração era atribuída a desbalanceamento:
+ela eleva a velocidade em 40% e, contra uma baseline de desvio 0,25 mm/s, isso dá
+z ≈ 6 e ganha de qualquer assinatura que só olhe magnitude.
+
+O termo das **estáveis** penaliza movimento onde a falha deveria deixar quieto. É
+o que separa sensor travado, em que o nível fica no valor nominal, de perda de
+acionamento, em que o nível desaba. Antes desse termo, a perda de acionamento era
+atribuída a falha de instrumentação.
+
+### Resultado verificado contra a bancada
+
+| falha injetada | atribuição | segmentos que acendem |
+|---|---|---|
+| Desbalanceamento | Desbalanceamento do rotor | eixo, tampa dianteira, carcaça |
+| Sobreaquecimento | Problema térmico ou elétrico | carcaça, defletora, caixa de ligação |
+| Rolamento | Degradação de rolamento | as duas tampas, onde ficam os mancais |
+| Sensor travado | Falha de instrumentação | nenhum |
+| Deriva de calibração | Deriva de calibração do sensor | nenhum |
+| Perda de acionamento | Perda de acionamento | caixa de ligação, tampa traseira |
+| Controle saudável | sem atribuição | nenhum |
+
+Os dois modos de instrumentação, sensor travado e deriva de calibração, **não
+acendem peça nenhuma** de propósito: não são falha do motor, e trocar rolamento
+por causa de um sensor descalibrado seria o pior erro possível.
+
+Na severidade severa a perda de acionamento leva o motor ao estado parado, e aí o
+sistema responde "análise não aplicável". Esse é o ponto cego estrutural de
+qualquer detector condicionado ao regime: quando a própria falha muda o regime, a
+comparação passa a ser contra a baseline de motor parado, onde aqueles valores são
+normais. O detector enxerga a transição, não o estado final.
+
 ## O que é impossível com estes dados
 
 1. **Detectar BPFO, BPFI, BSF ou FTF.** É Nyquist, não falta de esforço. O sensor

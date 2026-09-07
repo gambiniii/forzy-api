@@ -18,11 +18,28 @@ if str(PROJECT_ROOT) not in sys.path:
 from rag_module.config import FORZY_API_BASE_URL
 
 _ml_cache: dict = {"models": None, "features_df": None}
-FORZY_CSV = PROJECT_ROOT / "History_32026-05-19T11-46-10-920.csv"
+_CSV_NOME = "History_32026-05-19T11-46-10-920.csv"
+# O arquivo mora em `sensor/`. Apontar para a raiz fazia o fallback local desta
+# tool falhar com FileNotFoundError — e como o caminho pela API também falha sem
+# `AGENT_API_TOKEN` configurado, as duas rotas quebravam ao mesmo tempo.
+FORZY_CSV = next(
+    (p for p in (PROJECT_ROOT / "sensor" / _CSV_NOME, PROJECT_ROOT / _CSV_NOME) if p.exists()),
+    PROJECT_ROOT / "sensor" / _CSV_NOME,
+)
 
 
 def _api_get(path: str, params: dict | None = None, timeout: float = 6.0):
-    """GET autenticado na API interna com token admin."""
+    """GET autenticado na API interna com token admin.
+
+    ATENÇÃO: `AGENT_API_TOKEN` não está definido em nenhum lugar do projeto — não
+    está no .env, no .env.example nem no docker-compose. Sem ele, os endpoints
+    protegidos devolvem 401 e as quatro tools deste arquivo nunca trazem dado
+    útil. As tools de `db_tool.py` cobrem a mesma informação lendo o Postgres
+    direto, e é por isso que o agente continua funcionando.
+
+    Para ativar estas quatro tools, defina AGENT_API_TOKEN no .env com um token
+    de um usuário admin.
+    """
     import os
     token = os.getenv("AGENT_API_TOKEN", "")
     headers = {"Authorization": f"Bearer {token}"} if token else {}
@@ -42,7 +59,12 @@ def _temp_label(v: float | None) -> str:
 @tool
 def get_sensor_status(component_id: str = "1") -> str:
     """Busca a leitura mais recente dos sensores (temperatura, vibração, RPM).
-    Use para saber o estado ATUAL do motor neste momento."""
+    Use para saber o estado ATUAL do motor neste momento.
+
+    REQUER a variável de ambiente AGENT_API_TOKEN, que NÃO está configurada no projeto.
+    Sem ela esta tool devolve 401. PREFIRA as tools de banco (get_db_leituras,
+    get_db_diagnosticos, get_sensor_trends, get_motor_details), que leem o Postgres
+    direto e cobrem a mesma informação."""
     try:
         r = _api_get(f"/sensors/component/{component_id}/latest")
         r.raise_for_status()
@@ -65,7 +87,12 @@ def get_sensor_status(component_id: str = "1") -> str:
 @tool
 def get_active_alerts(motor_id: str = "1") -> str:
     """Lista alertas ATIVOS (não resolvidos) do motor.
-    Use quando perguntarem sobre alarmes, problemas em aberto ou notificações."""
+    Use quando perguntarem sobre alarmes, problemas em aberto ou notificações.
+
+    REQUER a variável de ambiente AGENT_API_TOKEN, que NÃO está configurada no projeto.
+    Sem ela esta tool devolve 401. PREFIRA as tools de banco (get_db_leituras,
+    get_db_diagnosticos, get_sensor_trends, get_motor_details), que leem o Postgres
+    direto e cobrem a mesma informação."""
     try:
         r = _api_get("/alerts/", params={"motor_id": motor_id, "resolved": "false"})
         r.raise_for_status()
@@ -83,7 +110,12 @@ def get_active_alerts(motor_id: str = "1") -> str:
 @tool
 def get_maintenance_history(motor_id: str = "1") -> str:
     """Busca histórico de manutenções (preventiva, corretiva, preditiva) do motor.
-    Use para perguntas sobre última manutenção, intervenções ou planejamento."""
+    Use para perguntas sobre última manutenção, intervenções ou planejamento.
+
+    REQUER a variável de ambiente AGENT_API_TOKEN, que NÃO está configurada no projeto.
+    Sem ela esta tool devolve 401. PREFIRA as tools de banco (get_db_leituras,
+    get_db_diagnosticos, get_sensor_trends, get_motor_details), que leem o Postgres
+    direto e cobrem a mesma informação."""
     try:
         r = _api_get("/maintenance/", params={"motor_id": motor_id})
         r.raise_for_status()
@@ -103,7 +135,12 @@ def get_maintenance_history(motor_id: str = "1") -> str:
 @tool
 def get_ml_analysis(motor_id: str = "1") -> str:
     """Executa análise ML completa: anomalias (Isolation Forest + LSTM) e RUL (vida útil restante).
-    Use para perguntas sobre saúde, anomalias, risco ou previsão de falha."""
+    Use para perguntas sobre saúde, anomalias, risco ou previsão de falha.
+
+    REQUER a variável de ambiente AGENT_API_TOKEN, que NÃO está configurada no projeto.
+    Sem ela esta tool devolve 401. PREFIRA as tools de banco (get_db_leituras,
+    get_db_diagnosticos, get_sensor_trends, get_motor_details), que leem o Postgres
+    direto e cobrem a mesma informação."""
     url = f"{FORZY_API_BASE_URL}/ml/anomaly"
     try:
         r = httpx.post(url, json={"machine_id": motor_id}, timeout=12.0)

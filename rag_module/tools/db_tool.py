@@ -33,10 +33,18 @@ def _exec(sql: str, params: dict | None = None):
 
 # ── Sensores ──────────────────────────────────────────────────────────────────
 
+def _num(v, casas: int = 2) -> str:
+    """Formata número tolerando zero. `f"{v or 'n/d'}"` transforma 0.0 em 'n/d',
+    porque zero é falsy — e zero é justamente a leitura de aceleração com o motor
+    parado, que é o estado mais comum no histórico."""
+    return f"{float(v):.{casas}f}" if v is not None else "n/d"
+
+
 @tool
 def get_db_leituras(componente_id: int = 1, limit: int = 10) -> str:
-    """Busca as últimas leituras de sensor (vibração, temperatura, RPM, corrente, voltagem)
-    do banco PostgreSQL. Use para dados históricos recentes, tendências ou embasar diagnóstico."""
+    """Busca as últimas leituras de sensor (velocidade de vibração, aceleração,
+    temperatura, corrente, voltagem) do banco PostgreSQL. Use para dados históricos
+    recentes, tendências ou embasar diagnóstico."""
     try:
         rows = _exec("""
             SELECT timestamp, temperatura, umidade, corrente, voltagem, rpm, vibracao, inclinacao
@@ -48,18 +56,39 @@ def get_db_leituras(componente_id: int = 1, limit: int = 10) -> str:
         if not rows:
             return f"Nenhuma leitura encontrada para componente {componente_id}."
 
-        lines = [f"Últimas {len(rows)} leituras — componente {componente_id}:"]
+        lines = [
+            f"Últimas {len(rows)} leituras — componente {componente_id}:",
+            "(a coluna `rpm` do banco guarda a VELOCIDADE de vibração em mm/s, não rotação; "
+            "a coluna `vibracao` guarda a ACELERAÇÃO em g)",
+        ]
         for r in rows:
             ts = r[0].strftime("%d/%m/%Y %H:%M UTC") if r[0] else "n/d"
-            vib = r[6]
-            temp = r[1]
-            vib_label = ("normal" if vib is None or vib < 2.8 else "atenção" if vib < 4.5 else "CRÍTICA")
-            temp_label = "normal" if temp is None or temp < 80 else "ALERTA"
+            temp, vel, acel = r[1], r[5], r[6]
+            # Os limites ISO 10816 são de VELOCIDADE em mm/s. Aplicá-los sobre a
+            # aceleração em g, como era feito antes, produz rótulo sem significado
+            # físico: 0,5 g virava "normal" pela régua errada.
+            if vel is None:
+                vel_label = "n/d"
+            elif vel < 0.30:
+                vel_label = "motor parado"
+            elif vel < 2.8:
+                vel_label = "normal"
+            elif vel < 4.5:
+                vel_label = "atenção"
+            else:
+                vel_label = "acima da referência ISO"
+            temp_label = "normal" if temp is None or temp < 70 else "ALERTA"
             lines.append(
-                f"  [{ts}] Temp: {temp or 'n/d'}°C ({temp_label}) | "
-                f"Vibr: {vib or 'n/d'} mm/s ({vib_label}) | "
-                f"RPM: {r[5] or 'n/d'} | Corrente: {r[3] or 'n/d'}A | Voltagem: {r[4] or 'n/d'}V"
+                f"  [{ts}] Temp: {_num(temp, 1)}°C ({temp_label}) | "
+                f"Velocidade: {_num(vel)} mm/s ({vel_label}) | "
+                f"Aceleração: {_num(acel, 3)} g | "
+                f"Corrente: {_num(r[3])}A | Voltagem: {_num(r[4], 1)}V"
             )
+        lines.append(
+            "NOTA: a baseline SAUDÁVEL medida deste motor em regime é 6,68 mm/s, acima da "
+            "referência ISO de máquina pequena. Avalie desvio relativo a essa baseline, não "
+            "zona ISO absoluta."
+        )
         return "\n".join(lines)
     except Exception as exc:
         return f"Erro ao consultar leituras: {exc}"
@@ -67,20 +96,23 @@ def get_db_leituras(componente_id: int = 1, limit: int = 10) -> str:
 
 @tool
 def get_sensor_trends(componente_id: int = 1, hours: int = 24) -> str:
-    """Analisa tendências dos sensores nas últimas N horas: médias, máximos, mínimos
-    e variação de temperatura, vibração e RPM. Use para perguntas sobre tendência ou evolução."""
+    """Analisa tendências dos sensores nas últimas N horas: médias, máximos e mínimos
+    de temperatura, velocidade de vibração e aceleração. Use para perguntas sobre
+    tendência ou evolução."""
     try:
+        # `hours` entra por parâmetro de bind (make_interval), não por interpolação
+        # de string dentro do SQL.
         rows = _exec("""
             SELECT
                 COUNT(*) as total,
                 AVG(temperatura) as avg_temp, MAX(temperatura) as max_temp, MIN(temperatura) as min_temp,
-                AVG(rpm) as avg_rpm, MAX(rpm) as max_rpm,
-                AVG(vibracao) as avg_vib, MAX(vibracao) as max_vib,
+                AVG(rpm) as avg_vel, MAX(rpm) as max_vel,
+                AVG(vibracao) as avg_acel, MAX(vibracao) as max_acel,
                 MIN(timestamp) as desde, MAX(timestamp) as ate
             FROM leitura_sensor
             WHERE componente_id = :cid
-              AND timestamp >= NOW() - INTERVAL ':h hours'
-        """.replace(":h", str(hours)), {"cid": componente_id})
+              AND timestamp >= NOW() - make_interval(hours => :h)
+        """, {"cid": componente_id, "h": int(hours)})
 
         if not rows or rows[0][0] == 0:
             rows = _exec("""
@@ -99,14 +131,16 @@ def get_sensor_trends(componente_id: int = 1, hours: int = 24) -> str:
         if not total:
             return "Sem dados de tendência disponíveis."
 
-        def fmt(v): return f"{float(v):.2f}" if v is not None else "n/d"
+        def fmt(v, c=2): return f"{float(v):.{c}f}" if v is not None else "n/d"
 
         return (
             f"Tendências — componente {componente_id} (últimas {hours}h, {total} amostras):\n"
-            f"  Temperatura: média {fmt(r[1])}°C | máx {fmt(r[2])}°C | mín {fmt(r[3])}°C\n"
-            f"  RPM:         média {fmt(r[4])} | máx {fmt(r[5])}\n"
-            f"  Vibração:    média {fmt(r[6])} mm/s | máx {fmt(r[7])} mm/s\n"
-            f"  Período:     {r[8]} → {r[9]}"
+            f"  Temperatura: média {fmt(r[1], 1)}°C | máx {fmt(r[2], 1)}°C | mín {fmt(r[3], 1)}°C\n"
+            f"  Velocidade de vibração: média {fmt(r[4])} mm/s | máx {fmt(r[5])} mm/s\n"
+            f"  Aceleração:  média {fmt(r[6], 3)} g | máx {fmt(r[7], 3)} g\n"
+            f"  Período:     {r[8]} → {r[9]}\n"
+            "  (a coluna `rpm` guarda velocidade em mm/s, não rotação; `vibracao` guarda "
+            "aceleração em g. Baseline saudável medida em regime: 6,68 mm/s e 0,50 g.)"
         )
     except Exception as exc:
         return f"Erro ao calcular tendências: {exc}"

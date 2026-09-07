@@ -36,6 +36,21 @@ SAVED = Path(__file__).resolve().parent / "saved"
 HEAT_SOAK_S = 900.0      # 15 min após o desligamento em que temperatura alta é normal
 
 _CACHE: dict | None = None
+_CACHE_MTIME: float | None = None
+
+
+def _mtime_artefatos() -> float:
+    """Maior mtime entre os artefatos treinados, para invalidar o cache.
+
+    Sem isso, retreinar exigiria reiniciar a API: o cache de módulo seguraria os
+    pesos antigos para sempre e ninguém perceberia que o retreino não surtiu efeito.
+    """
+    t = 0.0
+    for nome in ("modelos.json", "baseline_regime.json", "metricas.json"):
+        p = SAVED / nome
+        if p.exists():
+            t = max(t, p.stat().st_mtime)
+    return t
 
 
 def carregar() -> dict | None:
@@ -47,11 +62,13 @@ def carregar() -> dict | None:
     Forest existem para a COMPARAÇÃO da bancada, cujo resultado já está gravado
     em `metricas.json`. Em produção só o autoencoder pontua.
     """
-    global _CACHE
-    if _CACHE is not None:
-        return _CACHE
+    global _CACHE, _CACHE_MTIME
     if not (SAVED / "modelos.json").exists():
         return None
+
+    mtime = _mtime_artefatos()
+    if _CACHE is not None and _CACHE_MTIME == mtime:
+        return _CACHE
 
     from ml_module.forzy.detectors import Autoencoder
 
@@ -73,13 +90,27 @@ def carregar() -> dict | None:
 
     _CACHE = {"modelos": modelos, "baseline": baseline,
               "autoencoders": redes, "metricas": metricas}
+    _CACHE_MTIME = mtime
     return _CACHE
 
 
-def _motor_de_componente(componente_id: int) -> str:
-    """Componente 2 = sensor S1 = MOTOR-01; componente 3 = sensor S2 = MOTOR-02.
-    Componente 1 (motor da FIAP) não tem modelo próprio: cai no MOTOR-01."""
-    return "MOTOR-02" if int(componente_id) == 3 else "MOTOR-01"
+# Só estes dois componentes têm modelo treinado, porque só eles aparecem no
+# histórico de telemetria. O componente 1 é o motor da FIAP, que é OUTRO motor
+# físico: usar a baseline do S1 nele daria um número plausível e errado.
+MOTOR_POR_COMPONENTE = {2: "MOTOR-01", 3: "MOTOR-02"}
+
+# Faixas físicas válidas do Metric Contract. Leitura fora disso é falha de
+# sensor, não condição do motor, e é descartada antes de pontuar.
+FAIXA_VALIDA = {
+    "v_rms": (0.0, 50.0),      # mm/s
+    "a_rms": (0.0, 20.0),      # g
+    "temp_c": (-10.0, 150.0),  # °C
+}
+
+
+def _motor_de_componente(componente_id: int) -> str | None:
+    """Motor correspondente ao componente, ou None se não há modelo para ele."""
+    return MOTOR_POR_COMPONENTE.get(int(componente_id))
 
 
 def _sem_modelo(motivo: str) -> dict:
@@ -100,13 +131,44 @@ def avaliar(
     art = carregar()
     if art is None:
         return _sem_modelo("Modelos não treinados. Rode: python -m ml_module.forzy.train")
+
+    motor = _motor_de_componente(componente_id)
+    if motor is None:
+        return _sem_modelo(
+            f"Componente {componente_id} não tem modelo treinado. Só os componentes "
+            f"{sorted(MOTOR_POR_COMPONENTE)} aparecem no histórico de telemetria; "
+            "usar a baseline de outro motor daria um número plausível e errado."
+        )
+
     if len(leituras) < 20:
         return _sem_modelo(f"Janela curta ({len(leituras)} leituras; mínimo 20).")
 
     df = pd.DataFrame(leituras)
     if "timestamp" in df.columns:
         df = df.rename(columns={"timestamp": "ts"})
-    df["ts"] = pd.to_datetime(df["ts"]).astype("datetime64[us]")
+
+    # O banco devolve `timestamptz`, ou seja, timestamps COM fuso; o CSV histórico
+    # vem sem fuso. Converter direto com .astype("datetime64[us]") levanta
+    # TypeError na entrada com fuso, o que derrubava o endpoint em produção
+    # enquanto os testes sobre o CSV passavam. Normalizamos para UTC e removemos
+    # o fuso, de modo que os dois caminhos produzam a mesma coisa.
+    df["ts"] = pd.to_datetime(df["ts"], utc=True).dt.tz_localize(None).astype("datetime64[us]")
+
+    # Uma leitura sem valor não pode virar zero: zero é "motor parado", que é um
+    # estado físico legítimo e mudaria o regime. Descartamos a linha. O mesmo vale
+    # para leitura fora da faixa física: é falha de sensor, não condição do motor.
+    n_bruto = len(df)
+    for c, (lo, hi) in FAIXA_VALIDA.items():
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+            df.loc[(df[c] < lo) | (df[c] > hi), c] = np.nan
+    df = df.dropna(subset=[c for c in FAIXA_VALIDA if c in df.columns])
+    n_descartadas = n_bruto - len(df)
+    if len(df) < 20:
+        return _sem_modelo(
+            f"Janela curta após descartar leituras inválidas ({len(df)}; mínimo 20)."
+        )
+    df = df.reset_index(drop=True)
     if "a_peak" not in df.columns:
         df["a_peak"] = np.nan
     sem_pico = df["a_peak"].isna().all()
@@ -117,7 +179,7 @@ def avaliar(
         # partir de um crest fabricado.
         df["a_peak"] = df["a_rms"] * 3.22
 
-    df["motor"] = _motor_de_componente(componente_id)
+    df["motor"] = motor
     df = df.sort_values("ts", kind="stable").reset_index(drop=True)
 
     # O regime da amostra atual usa a classificação de INFERÊNCIA, sem o descarte
@@ -126,10 +188,14 @@ def avaliar(
     regime_atual = regimes.classificar_atual(df)
     df["regime"] = regime_atual
     seg = feat.construir(df)
-    motor = df["motor"].iloc[0]
     chave = f"{motor}|{regime_atual}"
 
     limitacoes = []
+    if n_descartadas:
+        limitacoes.append(
+            f"{n_descartadas} leitura(s) descartada(s) por estarem fora da faixa física "
+            "válida ou sem valor."
+        )
     if sem_pico:
         limitacoes.append(
             "Canal a-Peak ausente em produção: o fator de crest foi estimado, não medido. "
@@ -162,7 +228,17 @@ def avaliar(
     # Atribuição por z-score contra o baseline do regime da própria amostra.
     base = art["baseline"]["baseline"].get(chave)
     if base is None:
-        atrib = {"atribuido": False, "motivo": f"Sem baseline de regime para {chave}."}
+        # Mantém a MESMA forma dos outros retornos de atribuição. O tipo
+        # `AtribuicaoDetalhe` do frontend declara regime, score_normalizado e
+        # top_features como obrigatórios; devolver um dict curto aqui faria esses
+        # campos chegarem como undefined e o card do 3D quebraria.
+        atrib = {
+            "atribuido": False,
+            "motivo": f"Sem baseline de regime para {chave}.",
+            "regime": regime_atual,
+            "score_normalizado": round(score, 4),
+            "top_features": [],
+        }
     else:
         atrib = attribution.atribuir(
             x[0], np.asarray(base["mediana"]), np.asarray(base["escala"]),

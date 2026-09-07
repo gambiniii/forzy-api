@@ -32,16 +32,44 @@ SEG_DEFLETORA = "empty_19"
 SEG_EIXO = "empty_23"
 SEG_CAIXA_LIG = "empty_4"
 
-# Assinaturas esperadas por modo, na linguagem das features. Cada entrada lista
-# as features que devem dominar o z-score e os componentes candidatos ORDENADOS
-# por probabilidade.
+# ─────────────────────────────────────────────────────────────────────────────
+# COMO A ATRIBUIÇÃO DECIDE
+#
+# Cada assinatura declara a DIREÇÃO esperada de cada feature, com sinal, e a
+# pontuação é o casamento entre o padrão observado e esse gabarito:
+#
+#     pontuação = Σ(z[f] · peso[f]) / Σ|peso[f]|  −  média(|z[f]|) das estáveis
+#
+# Ranquear por magnitude bruta não funciona, e isso foi MEDIDO. Os vetores de
+# z-score dos modos injetados, no regime de operação do MOTOR-01:
+#
+#   modo                  v_rms   v_roll_max   a_rms   crest   razao_av   v_roll_std
+#   F1 desbalanceamento   +22.2      +23.4      +2.5    -0.5     -15.0       +2.1
+#   F3 rolamento           +2.2       +8.4      +3.2    +4.4      +3.6       +0.8
+#   F5 deriva de ganho     +6.1       +8.0      +4.2    +0.3      +0.4       +0.2
+#   F6 perda acionamento  -18.3      -19.3     -11.9    +0.2      -0.3        0.0
+#
+# A leitura física é direta. `razao_av` (a_rms/v_rms) é o discriminador:
+#   • desbalanceamento → DESPENCA, porque a energia vai para 1x a rotação e a
+#     velocidade sobe muito mais que a aceleração
+#   • rolamento        → SOBE, porque o impacto de alta frequência é aceleração
+#   • deriva de ganho  → FICA EM ZERO, porque todos os canais escalam juntos e a
+#     razão entre eles se preserva
+#
+# E `v_roll_std` com `v_delta` separam rampa de degrau: a deriva de calibração é
+# um degrau (variabilidade inalterada), o desbalanceamento é uma rampa.
+#
+# Sem os pesos com sinal, F5 era atribuído a desbalanceamento: ele eleva a
+# velocidade em 40% e, contra uma baseline de desvio 0,25 mm/s, isso dá z ≈ 6 e
+# ganha de qualquer assinatura que só olhe magnitude.
+# ─────────────────────────────────────────────────────────────────────────────
 ASSINATURAS = {
     "desbalanceamento": {
         "titulo": "Desbalanceamento do rotor",
-        "features_chave": ["v_roll_std", "v_rms", "v_roll_max"],
-        # O crest CAI no desbalanceamento: a energia vai para 1x a rotação, não
-        # para impacto. Se ele subiu, a hipótese é outra.
-        "features_contraste": ["crest", "crest_roll_mean"],
+        # razao_av pesa DOBRO: a queda dela é o que separa desbalanceamento de
+        # deriva de calibração, que também eleva a velocidade.
+        "direcao": {"v_rms": 1.0, "v_roll_max": 1.0, "razao_av": -2.0, "crest": -0.5},
+        "estaveis": [],
         "segmentos": [SEG_EIXO, SEG_TAMPA_DIANT, SEG_CARCACA],
         "componentes": ["Rotor", "Eixo", "Ventilador", "Acoplamento", "Fixação/pés"],
         "explicacao": (
@@ -52,12 +80,12 @@ ASSINATURAS = {
     },
     "rolamento": {
         "titulo": "Degradação de rolamento",
-        "features_chave": ["crest", "crest_roll_mean", "a_peak", "razao_av"],
-        # O que distingue rolamento de desbalanceamento NÃO é a magnitude, é a
-        # RAZÃO: o crest sobe enquanto o nível de velocidade quase não muda.
-        # Sem este contraste, um aumento de 18% na velocidade contra uma baseline
-        # apertada (desvio de 0,25 mm/s) domina o z-score e a atribuição erra.
-        "features_contraste": ["v_roll_mean", "v_rms"],
+        # O crest sobe ANTES do valor eficaz, e razao_av sobe junto porque o
+        # impacto de alta frequência é aceleração. O peso negativo em v_rms
+        # afasta o desbalanceamento, em que a velocidade é que domina.
+        "direcao": {"crest": 1.0, "crest_roll_mean": 1.0, "a_peak": 1.0,
+                    "razao_av": 1.0, "v_rms": -0.3},
+        "estaveis": [],
         "segmentos": [SEG_TAMPA_DIANT, SEG_TAMPA_TRAS],
         "componentes": [
             "Rolamento 6206 (dianteiro)", "Rolamento 6206 (traseiro)",
@@ -71,10 +99,10 @@ ASSINATURAS = {
     },
     "termico": {
         "titulo": "Problema térmico ou elétrico",
-        "features_chave": ["temp_slope", "temp_roll_mean", "temp_c"],
-        # Falha mecânica severa mexe na vibração; se ela está quieta, o problema
-        # é térmico ou elétrico.
-        "features_contraste": ["v_roll_mean", "a_roll_mean"],
+        "direcao": {"temp_slope": 1.0, "temp_roll_mean": 1.0, "temp_c": 1.0},
+        # Falha mecânica severa mexe na vibração; se ela está quieta em qualquer
+        # direção, o problema é térmico ou elétrico.
+        "estaveis": ["v_roll_mean", "a_roll_mean"],
         "segmentos": [SEG_CARCACA, SEG_DEFLETORA, SEG_CAIXA_LIG],
         "componentes": [
             "Ventilador", "Tampa defletora / fluxo de ar", "Estator bobinado",
@@ -88,8 +116,10 @@ ASSINATURAS = {
     },
     "instrumentacao": {
         "titulo": "Falha de instrumentação",
-        "features_chave": ["frac_repetida"],
-        "features_contraste": [],
+        "direcao": {"frac_repetida": 1.0},
+        # Sensor travado congela em valor NOMINAL: o nível não muda. Se ele
+        # desabou, é perda de acionamento, não instrumentação.
+        "estaveis": ["v_roll_mean", "a_roll_mean"],
         "segmentos": [],          # NÃO acende peça nenhuma
         "componentes": ["Sensor IO-Link", "Cabo do sensor", "Mestre IO-Link"],
         "explicacao": (
@@ -98,10 +128,27 @@ ASSINATURAS = {
         ),
         "precocidade": "precoce",
     },
+    "deriva_calibracao": {
+        "titulo": "Deriva de calibração do sensor",
+        # Erro de ganho move TODOS os canais na mesma proporção, então as razões
+        # entre eles se preservam. É isso que separa deriva de desbalanceamento:
+        # ambos elevam a velocidade, mas só o desbalanceamento derruba razao_av.
+        "direcao": {"v_rms": 1.0, "a_rms": 1.0, "a_roll_mean": 1.0},
+        "estaveis": ["crest", "razao_av", "v_roll_std", "v_delta"],
+        "segmentos": [],          # não é falha do motor: NÃO acende peça
+        "componentes": ["Sensor IO-Link", "Calibração do sensor", "Mestre IO-Link"],
+        "explicacao": (
+            "Todos os canais subiram na mesma proporção e as razões entre eles não mudaram. "
+            "Isso é assinatura de ganho errado no sensor, não de degradação mecânica: uma "
+            "falha real muda a relação entre velocidade e aceleração."
+        ),
+        "precocidade": "precoce",
+    },
     "perda_acionamento": {
         "titulo": "Perda de acionamento",
-        "features_chave": ["v_roll_std", "a_roll_std", "v_delta"],
-        "features_contraste": ["frac_repetida"],
+        # Desvio NEGATIVO: o sinal desabou porque o acionamento sumiu.
+        "direcao": {"v_roll_mean": -1.0, "a_roll_mean": -1.0, "v_rms": -1.0},
+        "estaveis": [],
         "segmentos": [SEG_CAIXA_LIG, SEG_TAMPA_TRAS],
         "componentes": [
             "Capacitor", "Mecanismo centrífugo de partida", "Platinado",
@@ -126,41 +173,32 @@ def z_por_feature(x: np.ndarray, mediana: np.ndarray, escala: np.ndarray) -> np.
 
 
 def _pontuar_assinaturas(z: dict[str, float]) -> list[tuple[str, float]]:
-    """Pontua cada assinatura por CONTRASTE, não por magnitude bruta.
+    """Pontua cada assinatura por CASAMENTO DE PADRÃO COM SINAL.
 
-        pontuação = média(z das features-chave) − média(z das features de contraste)
+        pontuação = Σ(z[f] · peso[f]) / Σ|peso[f]|  −  média(|z[f]|) das estáveis
 
-    Sem o termo de contraste, a assinatura de maior magnitude vence sempre e a
-    atribuição erra. Caso medido: a injeção de rolamento eleva a velocidade em
-    18%, o que contra uma baseline apertada (desvio de 0,25 mm/s em regime) dá
-    z ≈ 4,8 — e a hipótese de desbalanceamento passava à frente da de rolamento,
-    mesmo com o crest disparando. O que distingue os dois modos não é o tamanho
-    do desvio, é a RAZÃO entre canais:
+    O primeiro termo mede o quanto o desvio observado aponta na direção que
+    aquela falha produziria. O segundo penaliza movimento nas features que a
+    falha deveria deixar quietas — é o que separa sensor travado (nível
+    inalterado) de perda de acionamento (nível desabou).
 
-      • rolamento          → crest sobe, nível de velocidade quase não muda
-      • desbalanceamento   → velocidade sobe, crest CAI (energia em 1x a rotação)
-      • térmico            → temperatura sobe, vibração fica quieta
-
-    Usa apenas desvio POSITIVO nas features de magnitude: queda de vibração nunca
-    indica degradação — durante a corrida ela cai porque o lubrificante aquece
-    (medido: -0,038 mm/s por minuto enquanto a carcaça vai de 32 a 37 °C).
+    Queda de vibração nunca indica degradação por si só: durante a corrida ela
+    cai porque o lubrificante aquece (medido: −0,038 mm/s por minuto enquanto a
+    carcaça vai de 32 a 37 °C). Por isso apenas `perda_acionamento` tem pesos
+    negativos, e ela exige que a queda seja de nível, não de tendência.
     """
     pontos = []
     for chave, meta in ASSINATURAS.items():
-        chaves = [z[f] for f in meta["features_chave"] if f in z]
-        if not chaves:
+        direcao = meta.get("direcao") or {}
+        peso_total = sum(abs(p) for p in direcao.values())
+        if peso_total <= 0:
             continue
+        casamento = sum(z.get(f, 0.0) * p for f, p in direcao.items()) / peso_total
 
-        if chave == "perda_acionamento":
-            # Aqui o desvio relevante é o colapso do sinal, em qualquer direção.
-            positivo = float(np.mean([abs(v) for v in chaves]))
-        else:
-            positivo = float(np.mean([max(v, 0.0) for v in chaves]))
+        estaveis = [abs(z[f]) for f in meta.get("estaveis", []) if f in z]
+        penalidade = float(np.mean(estaveis)) if estaveis else 0.0
 
-        contraste = [z[f] for f in meta.get("features_contraste", []) if f in z]
-        penalidade = float(np.mean([max(v, 0.0) for v in contraste])) if contraste else 0.0
-
-        pontos.append((chave, positivo - penalidade))
+        pontos.append((chave, float(casamento - penalidade)))
     pontos.sort(key=lambda p: -p[1])
     return pontos
 

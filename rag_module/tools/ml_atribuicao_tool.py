@@ -36,24 +36,44 @@ def get_ml_atribuicao(componente_id: int = 2, janela_min: int = 15) -> str:
     """
     from datetime import datetime, timedelta, timezone
 
-    from ml_module.forzy import infer
-    from src.db.postgres import SessionLocal
-    from src.services import leitura_service
-
-    db = SessionLocal()
+    # Toda a query fica dentro de try/except como nas outras 20 tools: uma falha de
+    # banco (conexão caída, pool esgotado) tem que virar string de erro, não
+    # exceção propagando pelo ToolNode do LangGraph e derrubando o turno inteiro.
+    # SQL direto em vez do ORM, seguindo o padrão do db_tool. Usar
+    # `leitura_service` arrastava os mappers do SQLAlchemy, e se algum modelo não
+    # tivesse sido importado ainda a tool falhava com erro de mapper em vez de
+    # devolver dado — fragilidade desnecessária para uma consulta de leitura.
     try:
-        agora = datetime.now(timezone.utc)
-        linhas = leitura_service.get_leituras(
-            db, int(componente_id), agora - timedelta(minutes=int(janela_min)), None, 5000
-        )
-    finally:
-        db.close()
+        from sqlalchemy import text
 
-    linhas = sorted(linhas, key=lambda r: r.timestamp)
+        from ml_module.forzy import infer
+        from src.db.postgres import SessionLocal
+
+        db = SessionLocal()
+        try:
+            agora = datetime.now(timezone.utc)
+            rows = db.execute(text("""
+                SELECT timestamp, rpm, vibracao, temperatura
+                  FROM leitura_sensor
+                 WHERE componente_id = :cid
+                   AND timestamp >= :desde
+                   AND rpm IS NOT NULL
+                   AND vibracao IS NOT NULL
+                   AND temperatura IS NOT NULL
+                 ORDER BY timestamp ASC
+                 LIMIT 5000
+            """), {"cid": int(componente_id),
+                   "desde": agora - timedelta(minutes=int(janela_min))}).fetchall()
+        finally:
+            db.close()
+    except Exception as exc:
+        return f"Erro ao consultar a atribuição do componente {componente_id}: {exc}"
+
+    # `rpm` guarda a VELOCIDADE de vibração em mm/s e `vibracao` guarda a
+    # ACELERAÇÃO em g — os nomes das colunas enganam.
     leituras = [
-        {"timestamp": r.timestamp, "v_rms": r.rpm, "a_rms": r.vibracao, "temp_c": r.temperatura}
-        for r in linhas
-        if r.rpm is not None and r.vibracao is not None and r.temperatura is not None
+        {"timestamp": r[0], "v_rms": r[1], "a_rms": r[2], "temp_c": r[3]}
+        for r in rows
     ]
 
     seg_parado = None
@@ -128,9 +148,11 @@ def get_ml_metricas() -> str:
     pode confiar no diagnóstico. SEMPRE cite a ressalva de que as falhas são
     injetadas, não observadas.
     """
-    from ml_module.forzy import infer
-
-    m = infer.metricas_treino()
+    try:
+        from ml_module.forzy import infer
+        m = infer.metricas_treino()
+    except Exception as exc:
+        return f"Erro ao carregar as métricas dos modelos: {exc}"
     if not m:
         return ("Modelos de novidade ainda não treinados. "
                 "Rode: python -m ml_module.forzy.train")
