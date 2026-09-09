@@ -15,7 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from src.db.postgres import create_tables
 from src.routers import auth, alerts, maintenance, ml, aneel
 from src.routers import maquinas, componentes, atributos, leituras, plantas, diagnosticos
-from src.routers import sensors_api, analysis_api, audit_log
+from src.routers import sensors_api, analysis_api, audit_log, motor_segmentos, demo_control
 
 try:
     from rag_module.api.router import router as chat_router
@@ -51,6 +51,8 @@ app.include_router(maintenance.router,    prefix="/maintenance", tags=["Manuten�
 app.include_router(ml.router,           prefix="/ml",          tags=["ML / Predição"])
 app.include_router(aneel.router,        prefix="/aneel",       tags=["ANEEL / Tensão"])
 app.include_router(audit_log.router,    prefix="/audit-log",   tags=["Auditoria / Handoff"])
+app.include_router(motor_segmentos.router, prefix="/motor-segmentos", tags=["Catálogo do Modelo 3D"])
+app.include_router(demo_control.router, prefix="/demo", tags=["Modo Demonstração"])
 if chat_router is not None:
     app.include_router(chat_router, tags=["Chat / RAG"])
 
@@ -74,11 +76,19 @@ async def startup():
     create_tables()
     _load_ml_models()
     try:
-        from src.services.forzy_poller import poll_loop
-        asyncio.create_task(poll_loop())
-        logging.getLogger("app").info("Forzy poller iniciado — S1 → componente 2, S2 → componente 3.")
+        from src.config import settings
+        if settings.SENSOR_MODE == "demo":
+            from src.services.sensor_demo import demo_loop
+            asyncio.create_task(demo_loop())
+            logging.getLogger("app").warning(
+                "SENSOR_MODE=demo — repetindo histórico real em vez de consultar o hardware Forzy."
+            )
+        else:
+            from src.services.forzy_poller import poll_loop
+            asyncio.create_task(poll_loop())
+            logging.getLogger("app").info("Forzy poller iniciado — S1 → componente 2, S2 → componente 3.")
     except Exception as e:
-        logging.getLogger("app").warning("Forzy poller não iniciado: %s", e)
+        logging.getLogger("app").warning("Fonte de leituras (poller/demo) não iniciada: %s", e)
     try:
         from src.services.diagnostico_scheduler import diagnostico_loop
         asyncio.create_task(diagnostico_loop())

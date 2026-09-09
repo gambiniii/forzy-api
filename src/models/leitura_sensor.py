@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, Float, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from src.db.postgres import Base
@@ -17,5 +17,6 @@ class LeituraSensor(Base):
     rpm           = Column(Float, nullable=True)
     vibracao      = Column(Float, nullable=True)   # g
     inclinacao    = Column(Float, nullable=True)   # °
+    origem        = Column(String(10), nullable=False, default="real")  # real | demo (ver sensor_demo.py)
 
     componente = relationship("Componente", back_populates="leituras_sensor")

@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     # Forzy Sensor API
     FORZY_API_BASE_URL: str = "http://localhost:8000"
     FORZY_SENSOR_URL: str = "https://reseller-prescribed-facing-dept.trycloudflare.com"
+    # "real" consulta o hardware Forzy (poll_loop); "demo" repete o histórico
+    # real capturado (sensor_demo.demo_loop) — usar quando o hardware estiver
+    # devolvendo dado zerado (defeito confirmado pelo fabricante).
+    SENSOR_MODE: str = "real"
 
     # RAG
     CHROMA_PERSIST_DIR: str = "rag_module/vectorstore"

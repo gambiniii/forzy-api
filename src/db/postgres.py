@@ -30,6 +30,8 @@ def create_tables():
     from src.models.alert import Alert  # noqa
     from src.models.maintenance import Maintenance  # noqa
     from src.models.audit_log import AuditLog  # noqa
+    from src.models.motor_segmento import MotorSegmento  # noqa
+    from src.models.diagnostico import Diagnostico  # noqa — antes só registrada via import incidental dos routers
 
     try:
         Base.metadata.create_all(bind=engine)

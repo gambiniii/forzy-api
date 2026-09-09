@@ -217,9 +217,15 @@ async def _run_once(componente_id: int) -> None:
     _handle_threshold_alert(componente_id, threshold_status, threshold_message)
 
     # --- Pipeline de ML (IF + LSTM + RUL) ---
+    # get_leituras devolve em ordem DECRESCENTE; a inferência (rolling features
+    # em build_features + o gate operacional, que lê .iloc[-1]) precisa de série
+    # temporal CRESCENTE, senão as janelas móveis andam para trás e o gate acaba
+    # decidindo operando/desligado pela leitura mais ANTIGA da janela, não a mais
+    # nova — mesmo ajuste já usado em diagnosticos.py (rota /atribuicao).
+    valid_rows_asc = sorted(valid_rows, key=lambda r: r.timestamp)
     rows_dict = [
         {"timestamp": r.timestamp, "rpm": r.rpm, "vibracao": r.vibracao, "temperatura": r.temperatura}
-        for r in valid_rows
+        for r in valid_rows_asc
     ]
 
     from ml_module.inference.forzy_adapter import leituras_to_raw_df

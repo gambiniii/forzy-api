@@ -110,6 +110,18 @@ def get_atribuicao(
     return resultado
 
 
+@router.post("/componente/{componente_id}/rodar-agora")
+async def rodar_diagnostico_agora(componente_id: int, _=Depends(get_current_user)):
+    """Roda um ciclo do diagnóstico (Metric Contract + ML) imediatamente para
+    um componente, em vez de esperar o próximo ciclo do scheduler (até 5 min,
+    `DIAGNOSTIC_INTERVAL_SECONDS`). Uso: demonstração — depois de disparar uma
+    falha via /demo/falha, chamar aqui pra ver o resultado sem esperar."""
+    from src.services.diagnostico_scheduler import _run_once
+
+    await _run_once(componente_id)
+    return {"ok": True, "componente_id": componente_id}
+
+
 @router.get("/modelos/metricas")
 def get_metricas_modelos(_=Depends(get_current_user)):
     """Métricas da bancada de injeção de falhas dos modelos de novidade.

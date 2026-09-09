@@ -24,6 +24,7 @@ class SensorReading(BaseModel):
     rpm: Optional[float] = None
     vibracao: Optional[float] = None
     inclinacao: Optional[float] = None
+    origem: Optional[str] = None  # "real" | "demo" — ver migrations/007_leitura_sensor_origem.sql
 
 
 def _parse_start(start: Optional[str]) -> Optional[datetime]:
@@ -51,6 +52,7 @@ def _row_to_reading(r) -> SensorReading:
         timestamp=r[2].isoformat() if r[2] else "",
         temperatura=r[3], umidade=r[4], corrente=r[5],
         voltagem=r[6], rpm=r[7], vibracao=r[8], inclinacao=r[9],
+        origem=r[10] if len(r) > 10 else None,
     )
 
 
@@ -62,7 +64,7 @@ def get_latest_sensor(
 ):
     row = db.execute(text("""
         SELECT id, componente_id, timestamp, temperatura, umidade,
-               corrente, voltagem, rpm, vibracao, inclinacao
+               corrente, voltagem, rpm, vibracao, inclinacao, origem
         FROM leitura_sensor
         WHERE componente_id = :cid
         ORDER BY timestamp DESC LIMIT 1
@@ -84,7 +86,7 @@ def get_sensor_readings(
         params["since"] = since
         sql = """
             SELECT id, componente_id, timestamp, temperatura, umidade,
-                   corrente, voltagem, rpm, vibracao, inclinacao
+                   corrente, voltagem, rpm, vibracao, inclinacao, origem
             FROM leitura_sensor
             WHERE componente_id = :cid AND timestamp >= :since
             ORDER BY timestamp DESC LIMIT :lim
@@ -92,7 +94,7 @@ def get_sensor_readings(
     else:
         sql = """
             SELECT id, componente_id, timestamp, temperatura, umidade,
-                   corrente, voltagem, rpm, vibracao, inclinacao
+                   corrente, voltagem, rpm, vibracao, inclinacao, origem
             FROM leitura_sensor
             WHERE componente_id = :cid
             ORDER BY timestamp DESC LIMIT :lim
