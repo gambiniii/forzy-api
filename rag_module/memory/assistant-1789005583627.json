@@ -1,0 +1,19 @@
+{
+  "session_id": "assistant-1789005583627",
+  "updated_at": "2026-09-09T22:59:49.558429",
+  "turn_count": 1,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Me explique em detalhe a peça \"Eixo\" do motor Motor WEG W22 - Unidade S2: qual a função dela, quais modos de falha ela pode apresentar, e como esses modos aparecem nas leituras de velocidade de vibração, aceleração e temperatura que monitoramos."
+    },
+    {
+      "role": "assistant",
+      "content": "### Eixo  (segmento 3D `empty_23`)\nSistema: Sistema de transmissão\nTransmite o torque do rotor para a máquina acionada. Escalonado Ø30 no assento do rolamento e Ø28 na ponta. É o proxy visível do rotor.\nComponentes internos que esta peça representa: Rotor (gaiola), Núcleo do rotor, Assento do rolamento\nRelação com os sinais: velocidade = forte, aceleracao = média, temperatura = fraca\nModos de falha:\n  - Desbalanceamento do rotor (tardio): Velocidade sobe de forma sustentada e proporcional à rotação, com a aceleração subindo menos que a velocidade.\n  - Eixo empenado ou desalinhado (tardio): Vibração oscila periodicamente acompanhando a rotação; temperatura sobe por consequência.\nPode ser destacada no modelo 3D: sim"
+    },
+    {
+      "role": "assistant",
+      "content": "O Eixo do motor WEG W22 (segmento 3D `empty_23`) faz parte do sistema de transmissão. Sua função principal é transmitir o torque do rotor para a máquina acionada. Ele possui um diâmetro escalonado de Ø30 no assento do rolamento e Ø28 na ponta, e no modelo 3D, ele representa o rotor.\n\nOs componentes internos que o eixo representa incluem o Rotor (gaiola), o Núcleo do rotor e o Assento do rolamento.\n\nEm relação aos sinais monitorados, o eixo tem uma forte relação com a **velocidade de vibração**, uma relação média com a **aceleração** e uma relação fraca com a **temperatura**.\n\nOs modos de falha que o eixo pode apresentar e como eles se manifestam nos sinais são:\n\n*   **Desbalanceamento do rotor (tardio):**\n    *   **Velocidade de vibração:** Sobe de forma sustentada e proporcional à rotação.\n    *   **Aceleração:** Sobe, mas em menor proporção que a velocidade.\n    *   **Temperatura:** Não é o principal indicador direto.\n\n*   **Eixo empenado ou desalinhado (tardio):**\n    *   **Velocidade de vibração:** A vibração oscila periodicamente, acompanhando a rotação do motor.\n    *   **Temperatura:** Sobe como consequência do aumento da vibração e do atrito.\n    *   **Aceleração:** Pode apresentar alterações, mas a velocidade de vibração é o indicador mais proeminente.\n\nEsta peça pode ser destacada no modelo 3D para visualização."
+    }
+  ]
+}

@@ -37,8 +37,18 @@ REPLAY_INTERVAL_SECONDS = 3.0
 COMPONENTE_ID_S1 = 2  # Motor WEG W22 - Unidade S1
 COMPONENTE_ID_S2 = 3  # Motor WEG W22 - Unidade S2
 
-# Mesma constante calibrada em ml_module/forzy/injection.py (EPISODIO_S).
-EPISODIO_S = 90.0
+# Duração total que a falha fica ativa antes de resetar sozinha. Bem maior que
+# o EPISODIO_S de ml_module/forzy/injection.py (90s, pensado pra bancada
+# offline) de propósito: numa demo ao vivo, uma janela curta quase sempre
+# terminava antes do próximo ciclo do scheduler de diagnóstico (300s) chegar a
+# ver a falha — o sintoma era "às vezes acende, às vezes não".
+EPISODIO_S = 240.0
+
+# Tempo pra rampa alcançar o efeito PLENO (frac=1) — depois disso o efeito
+# fica constante até o fim do episódio, em vez de continuar subindo
+# linearmente pela duração toda. Sem isso, checar o diagnóstico cedo demais no
+# episódio pegava a falha ainda fraca demais pra cruzar o limite.
+RAMPA_S = 10.0
 
 # Mesmos pesos de severidade de ml_module/forzy/injection.py (SEVERIDADES).
 SEVERIDADES = {"incipiente": 0.35, "moderada": 0.70, "severa": 1.00}
@@ -78,7 +88,7 @@ def status_falha(componente_id: int) -> dict | None:
     if decorrido >= EPISODIO_S:
         resetar_falha(componente_id)
         return None
-    return {**estado, "frac": min(1.0, decorrido / EPISODIO_S)}
+    return {**estado, "frac": min(1.0, decorrido / RAMPA_S)}
 
 
 def _quantizar(v_rms: float, a_rms: float, a_peak: float, temp_c: float) -> tuple[float, float, float, float]:
