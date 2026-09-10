@@ -96,6 +96,27 @@ async def startup():
     except Exception as e:
         logging.getLogger("app").warning("Diagnostico scheduler não iniciado: %s", e)
 
+    # Pré-carrega o agente e o vectorstore em background.
+    #
+    # Sem isso o carregamento acontecia de forma preguiçosa, na PRIMEIRA mensagem
+    # que o usuário enviasse depois de cada reinício. Essa primeira mensagem
+    # pagava a construção inteira do vectorstore e do agente, e qualquer falha
+    # nesse caminho chegava ao usuário como "Erro ao conectar com a API", sem
+    # nenhuma pista do que aconteceu.
+    #
+    # Roda em background para não segurar o startup: quem chamar o chat antes de
+    # terminar continua funcionando pelo caminho preguiçoso de sempre.
+    async def _aquecer_agente():
+        try:
+            loop = asyncio.get_event_loop()
+            from rag_module.api.router import get_agent
+            await loop.run_in_executor(None, get_agent)
+            logging.getLogger("app").info("Agente RAG pré-carregado.")
+        except Exception as e:
+            logging.getLogger("app").warning("Agente RAG não pré-carregado: %s", e)
+
+    asyncio.create_task(_aquecer_agente())
+
 
 def _load_ml_models():
     import sys

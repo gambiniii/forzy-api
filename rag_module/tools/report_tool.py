@@ -102,7 +102,7 @@ def _build_pdf(componente_id: int, diag, leituras: list, alerts: list, motor) ->
             ["Motor", motor[0]], ["Tipo", motor[1] or "N/D"], ["Serial", motor[2] or "N/D"],
             ["Tensão nominal", f"{motor[3]}V" if motor[3] else "N/D"],
             ["Corrente nominal", f"{motor[4]}A" if motor[4] else "N/D"],
-            ["RPM nominal", str(motor[5]) if motor[5] else "N/D"],
+            ["Rotação nominal (rpm)", str(motor[5]) if motor[5] else "N/D"],
             ["Potência", f"{motor[6]}kW" if motor[6] else "N/D"],
         ]
         tbl = Table(spec_data, colWidths=[70*mm, 100*mm])
@@ -148,7 +148,7 @@ def _build_pdf(componente_id: int, diag, leituras: list, alerts: list, motor) ->
 
     story.append(Paragraph("Leituras Recentes dos Sensores", section_s))
     if leituras:
-        leit_data = [["Data/Hora", "Temp (°C)", "RPM", "Vibração (mm/s)", "Corrente (A)", "Voltagem (V)"]]
+        leit_data = [["Data/Hora", "Temp (°C)", "Velocidade (mm/s)", "Aceleração (g)", "Corrente (A)", "Voltagem (V)"]]
         for l in leituras:
             ts = l[0].strftime("%d/%m %H:%M") if l[0] else "N/D"
             leit_data.append([ts,
@@ -238,7 +238,7 @@ def _build_excel(componente_id: int, diag, leituras: list, alerts: list, motor) 
         for label, val in [
             ("Nome", motor[0]), ("Tipo", motor[1]), ("Serial", motor[2]),
             ("Tensão nominal", f"{motor[3]}V"), ("Corrente nominal", f"{motor[4]}A"),
-            ("RPM nominal", motor[5]), ("Potência", f"{motor[6]}kW"),
+            ("Rotação nominal (rpm)", motor[5]), ("Potência", f"{motor[6]}kW"),
             ("Planta", motor[7]), ("Localização", motor[8]),
         ]:
             ws.append([label, val])
@@ -264,7 +264,7 @@ def _build_excel(componente_id: int, diag, leituras: list, alerts: list, motor) 
 
     # ── Aba: Leituras ──
     ws2 = wb.create_sheet("Leituras de Sensor")
-    headers = ["Timestamp", "Temperatura (°C)", "Umidade (%)", "Corrente (A)", "Voltagem (V)", "RPM", "Vibração (mm/s)", "Inclinação"]
+    headers = ["Timestamp", "Temperatura (°C)", "Umidade (%)", "Corrente (A)", "Voltagem (V)", "Velocidade de vibração (mm/s)", "Aceleração (g)", "Inclinação"]
     ws2.append(headers)
     for i, h in enumerate(headers, 1):
         cell = ws2.cell(1, i, h)
@@ -357,7 +357,7 @@ def _build_word(componente_id: int, diag, leituras: list, alerts: list, motor) -
         tbl.rows[0].cells[1].text = "Valor"
         specs = [("Nome", motor[0]), ("Tipo", motor[1] or "N/D"), ("Serial", motor[2] or "N/D"),
                  ("Tensão nominal", f"{motor[3]}V"), ("Corrente nominal", f"{motor[4]}A"),
-                 ("RPM nominal", str(motor[5])), ("Potência", f"{motor[6]}kW"),
+                 ("Rotação nominal (rpm)", str(motor[5])), ("Potência", f"{motor[6]}kW"),
                  ("Planta", motor[7] or "N/D"), ("Localização", motor[8] or "N/D")]
         for label, val in specs:
             add_table_row(tbl, [label, val], bold_first=True)
@@ -391,7 +391,7 @@ def _build_word(componente_id: int, diag, leituras: list, alerts: list, motor) -
     if leituras:
         tbl3 = doc.add_table(rows=1, cols=6)
         tbl3.style = "Light Shading Accent 1"
-        for i, h in enumerate(["Data/Hora", "Temp (°C)", "RPM", "Vibração", "Corrente (A)", "Voltagem (V)"]):
+        for i, h in enumerate(["Data/Hora", "Temp (°C)", "Velocidade (mm/s)", "Aceleração (g)", "Corrente (A)", "Voltagem (V)"]):
             tbl3.rows[0].cells[i].text = h
         for l in leituras:
             row = tbl3.add_row()
