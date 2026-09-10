@@ -75,37 +75,34 @@ async def startup():
     import asyncio
     create_tables()
     _load_ml_models()
-    try:
-        from src.config import settings
-        if settings.SENSOR_MODE == "demo":
-            from src.services.sensor_demo import demo_loop
-            asyncio.create_task(demo_loop())
-            logging.getLogger("app").warning(
-                "SENSOR_MODE=demo — repetindo histórico real em vez de consultar o hardware Forzy."
-            )
-        else:
-            from src.services.forzy_poller import poll_loop
-            asyncio.create_task(poll_loop())
-            logging.getLogger("app").info("Forzy poller iniciado — S1 → componente 2, S2 → componente 3.")
-    except Exception as e:
-        logging.getLogger("app").warning("Fonte de leituras (poller/demo) não iniciada: %s", e)
-    try:
-        from src.services.diagnostico_scheduler import diagnostico_loop
-        asyncio.create_task(diagnostico_loop())
-        logging.getLogger("app").info("Diagnostico scheduler iniciado em background.")
-    except Exception as e:
-        logging.getLogger("app").warning("Diagnostico scheduler não iniciado: %s", e)
 
-    # Pré-carrega o agente e o vectorstore em background.
-    #
-    # Sem isso o carregamento acontecia de forma preguiçosa, na PRIMEIRA mensagem
-    # que o usuário enviasse depois de cada reinício. Essa primeira mensagem
-    # pagava a construção inteira do vectorstore e do agente, e qualquer falha
-    # nesse caminho chegava ao usuário como "Erro ao conectar com a API", sem
-    # nenhuma pista do que aconteceu.
-    #
-    # Roda em background para não segurar o startup: quem chamar o chat antes de
-    # terminar continua funcionando pelo caminho preguiçoso de sempre.
+    from src.config import settings
+    if settings.READ_ONLY:
+        logging.getLogger("app").warning(
+            "READ_ONLY=true — esta instância não escreve no banco (sem poller/demo, sem "
+            "scheduler de diagnóstico). Só serve a API pra leitura do que outra instância gravar."
+        )
+    else:
+        try:
+            if settings.SENSOR_MODE == "demo":
+                from src.services.sensor_demo import demo_loop
+                asyncio.create_task(demo_loop())
+                logging.getLogger("app").warning(
+                    "SENSOR_MODE=demo — repetindo histórico real em vez de consultar o hardware Forzy."
+                )
+            else:
+                from src.services.forzy_poller import poll_loop
+                asyncio.create_task(poll_loop())
+                logging.getLogger("app").info("Forzy poller iniciado — S1 → componente 2, S2 → componente 3.")
+        except Exception as e:
+            logging.getLogger("app").warning("Fonte de leituras (poller/demo) não iniciada: %s", e)
+        try:
+            from src.services.diagnostico_scheduler import diagnostico_loop
+            asyncio.create_task(diagnostico_loop())
+            logging.getLogger("app").info("Diagnostico scheduler iniciado em background.")
+        except Exception as e:
+            logging.getLogger("app").warning("Diagnostico scheduler não iniciado: %s", e)
+
     async def _aquecer_agente():
         try:
             loop = asyncio.get_event_loop()

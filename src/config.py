@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     # real capturado (sensor_demo.demo_loop) — usar quando o hardware estiver
     # devolvendo dado zerado (defeito confirmado pelo fabricante).
     SENSOR_MODE: str = "real"
+    # Quando true, esta instância não roda nenhum processo em background que
+    # escreve no banco (poller/modo demo E o scheduler de diagnóstico) — só
+    # serve a API pra leitura. Uso: duas máquinas apontando pro mesmo banco
+    # compartilhado, uma alimentando (SENSOR_MODE=demo) e outra só exibindo
+    # (READ_ONLY=true), sem as duas competirem pra escrever a mesma linha.
+    READ_ONLY: bool = False
 
     # RAG
     CHROMA_PERSIST_DIR: str = "rag_module/vectorstore"

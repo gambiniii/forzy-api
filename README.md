@@ -73,3 +73,34 @@ Isso troca o poller real por um replay do histórico real capturado
 ficam marcadas com `origem=demo` na tabela `leitura_sensor`, nunca se
 confundem com dado real do hardware, e o frontend mostra um aviso de
 "dados de demonstração" enquanto esse modo estiver ativo.
+
+### Duas máquinas na apresentação: uma alimenta, outra só exibe
+
+Cenário: um integrante roda a API com `SENSOR_MODE=demo` numa máquina
+(alimenta o banco compartilhado), e você quer rodar sua própria instância só
+pra exibir os dados, sem competir por escrever a mesma linha (poller/demo E
+scheduler de diagnóstico rodando em dobro geram resultado inconsistente).
+Aponte `POSTGRES_*` no seu `.env` pro mesmo banco e defina:
+
+```bash
+READ_ONLY=true
+```
+
+Essa instância não inicia nenhum processo em background que escreve no banco
+— só serve a API pra leitura do que a outra instância for gravando. Testado
+ao vivo: uma instância em `SENSOR_MODE=demo` escrevendo e outra em
+`READ_ONLY=true` lendo o mesmo dado fresco, ambas no mesmo banco.
+
+### Motores estáticos por condição (apresentação)
+
+```bash
+python scripts/seed_motores_demo_condicoes.py
+```
+
+Cria 7 máquinas na planta FIAP, uma por condição da tabela "Resultado
+verificado" de `docs/resposta-pendencias-ml-fase2.md` (6 modos de falha
+injetados + controle saudável), cada uma já com um diagnóstico congelado
+(status, KPIs e — quando a condição tiver segmento associado — o destaque no
+3D já vêm prontos). Não cria leitura nenhuma nem depende de nenhum processo
+ao vivo — abre e já mostra o estado certo, sem esperar nada. Não toca nos
+motores existentes (componente_id 1, 2, 3).
